@@ -1,0 +1,34 @@
+{% extends "install/_wizard_base.html" %}
+{% block wizard_body %}
+<div class="eyebrow">Step 10 of {{ steps|length }}</div>
+<h2 style="margin:8px 0 6px;">Review &amp; finish</h2>
+<p style="color:var(--text-muted); margin:0 0 20px;">Here's what we'll set up. You can change every one of these later.</p>
+
+<div style="display:flex; flex-direction:column; gap:10px; margin-bottom:22px;">
+  <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
+    <span style="color:var(--text-muted);">Administrator</span><span class="mono">{{ wizard_data.get('username', '—') }}</span>
+  </div>
+  <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
+    <span style="color:var(--text-muted);">Bind address / port</span><span class="mono">{{ wizard_data.get('bind_addr','0.0.0.0') }}:{{ wizard_data.get('dns_port','53') }}</span>
+  </div>
+  <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
+    <span style="color:var(--text-muted);">Primary domain</span><span class="mono">{{ wizard_data.get('primary_domain') or 'none yet' }}</span>
+  </div>
+  <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
+    <span style="color:var(--text-muted);">Upstream</span><span class="mono">{{ wizard_data.get('upstream_preset','cloudflare') }}</span>
+  </div>
+  <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
+    <span style="color:var(--text-muted);">Family Safe categories</span><span class="mono">{{ (wizard_data.get('family_categories') or [])|join(', ') or 'none' }}</span>
+  </div>
+  <div style="display:flex; justify-content:space-between; padding:10px 0;">
+    <span style="color:var(--text-muted);">Plugins</span><span class="mono">{{ (wizard_data.get('plugins') or [])|join(', ') or 'none' }}</span>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('install.finish') }}">
+  <div style="display:flex; justify-content:space-between;">
+    <a class="btn btn-outline" href="{{ url_for('install.wizard', step='plugins') }}">Back</a>
+    <button class="btn btn-primary" type="submit">Finish setup {{ icon('check') }}</button>
+  </div>
+</form>
+{% endblock %}

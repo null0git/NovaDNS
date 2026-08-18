@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block page_title %}Audit Log{% endblock %}
+{% block content %}
+<form method="get" style="display:flex; gap:10px; margin-bottom:16px;">
+  <input class="mono" name="q" value="{{ q }}" placeholder="Search actions, details, username…" style="max-width:320px;">
+  <select name="category">
+    <option value="">All categories</option>
+    {% for c in categories %}<option value="{{ c }}" {{ 'selected' if c==category }}>{{ c }}</option>{% endfor %}
+  </select>
+  <button class="btn btn-outline" type="submit">{{ icon('search') }} Filter</button>
+  <a class="btn btn-ghost" href="{{ url_for('audit.export_csv', q=q, category=category) }}">{{ icon('download') }} Export CSV</a>
+</form>
+
+<div class="card">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Time</th><th>User</th><th>Category</th><th>Action</th><th>IP</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td style="color:var(--text-faint); white-space:nowrap;">{{ r.ts | dtfmt('%b %d, %H:%M:%S') }}</td>
+        <td class="mono">{{ r.username or '—' }}</td>
+        <td><span class="badge badge-gray">{{ r.category }}</span></td>
+        <td>{{ r.action }}{% if r.details %} <span style="color:var(--text-faint);">— {{ r.details }}</span>{% endif %}</td>
+        <td class="mono" style="color:var(--text-faint);">{{ r.ip or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="empty-state">No matching entries.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}

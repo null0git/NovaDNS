@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block page_title %}Architecture Explorer{% endblock %}
+{% block content %}
+<div class="tabs" id="arch-tabs">
+  <div class="tab active" data-target="diag-pipeline">Resolution Pipeline</div>
+  <div class="tab" data-target="diag-cache">Cache Flow</div>
+  <div class="tab" data-target="diag-dnssec">DNSSEC Signing</div>
+  <div class="tab" data-target="diag-threads">Thread Model</div>
+  <div class="tab" data-target="diag-db">Database Layout</div>
+</div>
+
+<div id="diag-pipeline" class="arch-pane">
+  <div class="card card-pad">
+    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;" id="pipeline-flow"></div>
+    <div id="pipeline-detail" style="margin-top:18px;"></div>
+  </div>
+</div>
+
+<div id="diag-cache" class="arch-pane" style="display:none;">
+  <div class="card card-pad">
+    <p style="color:var(--text-muted); margin-top:0;">Every cache entry stores its <b>origin</b> (authoritative vs. forwarded) alongside the answer. This is what lets a cache hit still set the DNS AA bit correctly — a cached authoritative answer is still authoritative; a cached forwarded answer never is.</p>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <div class="badge badge-blue" style="padding:10px 14px;">Query arrives</div>→
+      <div class="badge badge-purple" style="padding:10px 14px;">cache.get(name, type)</div>→
+      <div class="badge badge-green" style="padding:10px 14px;">HIT: return + true origin</div>
+    </div>
+    <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <div class="badge badge-gray" style="padding:10px 14px;">MISS</div>→
+      <div class="badge badge-blue" style="padding:10px 14px;">resolve from zone/forwarder</div>→
+      <div class="badge badge-amber" style="padding:10px 14px;">cache.set(..., origin=authoritative|forward)</div>
+    </div>
+    <p style="margin-top:16px; color:var(--text-muted);">TTL comes from the lowest TTL among the returned records (or the zone's negative-TTL for NXDOMAIN). Eviction is a simple oldest-5% sweep when the cache exceeds its entry cap — no LRU bookkeeping overhead on the hot path.</p>
+  </div>
+</div>
+
+<div id="diag-dnssec" class="arch-pane" style="display:none;">
+  <div class="card card-pad">
+    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+      <div class="badge badge-blue" style="padding:10px 14px;">Generate ECDSA P-256 key</div>→
+      <div class="badge badge-blue" style="padding:10px 14px;">Publish DNSKEY</div>→
+      <div class="badge badge-purple" style="padding:10px 14px;">Build NSEC chain (canonical order)</div>→
+      <div class="badge badge-purple" style="padding:10px 14px;">Sign every RRset (RRSIG)</div>→
+      <div class="badge badge-green" style="padding:10px 14px;">Serve on EDNS DO=1</div>
+    </div>
+    <p style="margin-top:16px; color:var(--text-muted);">Each RRSIG covers a canonical wire-format encoding of its RRset per RFC 4034 §6: owner name lowercased and uncompressed, RRs sorted by RDATA when there's more than one. The signature itself is raw r‖s (64 bytes for P-256), not DER — per RFC 6605. Editing a record on a signed zone triggers an automatic full re-sign.</p>
+  </div>
+</div>
+
+<div id="diag-threads" class="arch-pane" style="display:none;">
+  <div class="card card-pad">
+    <p style="color:var(--text-muted); margin-top:0;">One process, several long-lived threads plus per-request worker threads:</p>
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <div style="display:flex; gap:10px; align-items:center;"><span class="badge badge-blue" style="width:170px; text-align:center;">Main thread</span><span style="color:var(--text-muted);">Flask/Werkzeug dev server (or a WSGI server in production)</span></div>
+      <div style="display:flex; gap:10px; align-items:center;"><span class="badge badge-purple" style="width:170px; text-align:center;">novadns-udp</span><span style="color:var(--text-muted);">accepts UDP packets, spawns a worker thread per packet</span></div>
+      <div style="display:flex; gap:10px; align-items:center;"><span class="badge badge-purple" style="width:170px; text-align:center;">novadns-tcp</span><span style="color:var(--text-muted);">accepts TCP connections, spawns a worker thread per connection (AXFR, DoT-forwarded lookups, large responses)</span></div>
+      <div style="display:flex; gap:10px; align-items:center;"><span class="badge badge-amber" style="width:170px; text-align:center;">novadns-alerts</span><span style="color:var(--text-muted);">polls health every 30s, dispatches notifications</span></div>
+      <div style="display:flex; gap:10px; align-items:center;"><span class="badge badge-amber" style="width:170px; text-align:center;">novadns-blocklists</span><span style="color:var(--text-muted);">refreshes subscribed blocklists every 24h</span></div>
+    </div>
+    <p style="margin-top:16px; color:var(--text-muted);">Each thread that touches SQLite gets its own thread-local connection (WAL mode + busy-timeout), so a burst of concurrent queries from many devices never blocks on a single shared connection.</p>
+  </div>
+</div>
+
+<div id="diag-db" class="arch-pane" style="display:none;">
+  <div class="card card-pad">
+    <p style="color:var(--text-muted); margin-top:0;">Single SQLite file. Key tables:</p>
+    <div class="grid grid-3">
+      {% for t, desc in [
+        ('zones', 'name, SOA fields, default TTL, DNSSEC flag'),
+        ('records', 'zone_id, name, rtype, ttl, data_json, client_match (Split DNS)'),
+        ('dnssec_keys', 'per-zone signing key, DS digest'),
+        ('forwarders', 'upstream address/protocol/priority/health'),
+        ('rewrite_rules', 'match type, pattern, client/time scope'),
+        ('blocklists / block_entries', 'category, source URL, domain entries'),
+        ('client_groups', 'named CIDR/IP sets'),
+        ('query_log', 'every query: client, name, type, source, latency'),
+        ('audit_log', 'every admin action, searchable/exportable'),
+      ] %}
+      <div class="card" style="background:var(--bg-elevated);"><div class="card-pad"><b class="mono">{{ t }}</b><div class="help" style="margin-top:4px;">{{ desc }}</div></div></div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('#arch-tabs .tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('#arch-tabs .tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.arch-pane').forEach(p=>p.style.display='none');
+  t.classList.add('active');
+  document.getElementById(t.dataset.target).style.display='block';
+}));
+
+const STAGES = [
+  {name:"Client", detail:"A UDP or TCP query arrives at the DNS listener. Server.py parses it with the hand-written wire-format decoder (no third-party DNS library)."},
+  {name:"ACL", detail:"is_allowed_by_acl() checks the client IP against the configured allow-list. Empty list = allow all (default); a configured list refuses everyone else with RCODE=REFUSED."},
+  {name:"Rate Limiter", detail:"A per-client token bucket (novadns/dnscore/ratelimit.py) protects against floods. Configurable queries/sec and burst capacity, live-applied without restart."},
+  {name:"Rewrite Engine", detail:"Checks exact/wildcard/regex rules, each optionally scoped to a client network and/or time window, in priority order."},
+  {name:"Blocklists", detail:"Checks custom block/allow entries and subscribed category blocklists. Allow-list entries always win over block entries."},
+  {name:"Split DNS", detail:"Authoritative lookup prefers a client-scoped record (CIDR or group:name) over the unscoped fallback for the same name+type."},
+  {name:"Cache Lookup", detail:"Checks the in-memory TTL cache, keyed by (name, type, DNSSEC-requested). A hit returns instantly with the answer's true origin preserved for the AA bit."},
+  {name:"Authoritative Lookup", detail:"Checks configured zones for a matching name+type. NXDOMAIN/NODATA responses include the zone's SOA (and NSEC+RRSIG if DNSSEC-enabled) in the authority section."},
+  {name:"Forwarder", detail:"If no local zone matches, forwards to the configured upstream(s) over UDP, TCP, DoH, or DoT, with automatic failover and health tracking."},
+  {name:"DNSSEC", detail:"If the query set the EDNS DO bit and the zone is signed, RRSIGs (and NSEC proofs for negative answers) are attached to the response."},
+  {name:"Response", detail:"The final wire-format message is assembled — AA bit set only for genuinely authoritative data, EDNS OPT echoed if the client offered it — and sent back."},
+];
+document.getElementById('pipeline-flow').innerHTML = STAGES.map((s,i) => `
+  <span class="badge badge-blue" style="cursor:pointer; padding:10px 14px;" onclick="showStage(${i})">${s.name}</span>
+  ${i < STAGES.length-1 ? '<span style="color:var(--text-faint);">→</span>' : ''}
+`).join('');
+function showStage(i){
+  document.getElementById('pipeline-detail').innerHTML = `<div class="card" style="background:var(--bg-elevated);"><div class="card-pad"><b>${STAGES[i].name}</b><p style="color:var(--text-muted); margin:8px 0 0;">${STAGES[i].detail}</p></div></div>`;
+}
+showStage(0);
+</script>
+{% endblock %}

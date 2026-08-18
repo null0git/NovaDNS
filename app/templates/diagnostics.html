@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block page_title %}Diagnostics{% endblock %}
+{% block content %}
+<div class="grid grid-2" style="margin-bottom:20px; align-items:start;">
+  <div class="card">
+    <div class="card-head"><h3>{{ icon('search') }} &nbsp;DNS lookup</h3></div>
+    <div class="card-pad">
+      <div class="field-row">
+        <div class="field"><label>Name</label><input class="mono" id="lk-name" placeholder="example.com"></div>
+        <div class="field"><label>Type</label><input class="mono" id="lk-type" value="A"></div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;" onclick="doLookup()">Run lookup</button>
+      <div id="lk-trace" style="margin-top:14px; display:flex; flex-direction:column; gap:6px;"></div>
+      <div id="lk-result" style="margin-top:14px; font-family:var(--font-mono); font-size:12.5px; white-space:pre-wrap; color:var(--text-muted);"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>{{ icon('wifi') }} &nbsp;Connectivity test</h3></div>
+    <div class="card-pad">
+      <button class="btn btn-outline" style="width:100%;" onclick="doConnectivity()">Test upstream reachability</button>
+      <div id="conn-result" style="margin-top:14px; display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head" style="justify-content:space-between;"><h3>{{ icon('stethoscope') }} &nbsp;Automatic configuration analysis</h3>
+    <button class="btn btn-sm btn-outline" onclick="loadAnalysis()">Re-run</button>
+  </div>
+  <div class="card-pad" id="analysis-result">Loading…</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function doLookup(){
+  const body = { qname: document.getElementById('lk-name').value, qtype: document.getElementById('lk-type').value };
+  document.getElementById('lk-result').textContent = 'Resolving…';
+  Nova.api("{{ url_for('diagnostics.lookup') }}", {method:"POST", body}).then(d=>{
+    document.getElementById('lk-trace').innerHTML = (d.trace || []).map(s => `
+      <div style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
+        <span class="badge badge-blue mono" style="min-width:64px; text-align:center;">${s.elapsed_ms}ms</span>
+        <span style="color:var(--text-muted); min-width:150px;">${s.stage.replace(/_/g,' ')}</span>
+        <span style="color:var(--text);">→ ${s.decision}</span>
+      </div>`).join('');
+    let out = `;; ${d.qname} ${d.qtype} -> rcode ${d.rcode} (${d.source}, ${d.elapsed_ms}ms, ${d.is_authoritative ? 'AA=1 authoritative' : 'AA=0 not authoritative'})\n`;
+    d.answers.forEach(a => out += `${d.qname}  ${a.ttl}  IN  ${a.rtype}  ${JSON.stringify(a.value)}\n`);
+    if(!d.answers.length) out += ';; no answer\n';
+    if(d.authority.length){
+      out += ';; AUTHORITY SECTION:\n';
+      d.authority.forEach(a => out += `  ${a.ttl}  IN  ${a.rtype}  ${JSON.stringify(a.value)}\n`);
+    }
+    document.getElementById('lk-result').textContent = out;
+  });
+}
+function doConnectivity(){
+  const box = document.getElementById('conn-result');
+  box.innerHTML = '<div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  Nova.api("{{ url_for('diagnostics.connectivity') }}", {method:"POST"}).then(d=>{
+    box.innerHTML = d.results.map(r => r.ok
+      ? `<div><span class="badge badge-green">ok</span> ${r.label} — ${r.latency_ms}ms</div>`
+      : `<div><span class="badge badge-red">fail</span> ${r.label} — ${r.error}</div>`).join('');
+  });
+}
+function loadAnalysis(){
+  const box = document.getElementById('analysis-result');
+  box.innerHTML = '<div class="skel skel-row"></div><div class="skel skel-row"></div><div class="skel skel-row" style="width:60%"></div>';
+  fetch("{{ url_for('diagnostics.config_analysis') }}").then(r=>r.json()).then(d=>{
+    box.innerHTML = d.suggestions.map(s => {
+      const cls = s.level==='error'?'badge-red':s.level==='warning'?'badge-amber':s.level==='ok'?'badge-green':'badge-blue';
+      return `<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);"><span class="badge ${cls}">${s.level}</span>${s.message}</div>`;
+    }).join('');
+  });
+}
+loadAnalysis();
+</script>
+{% endblock %}

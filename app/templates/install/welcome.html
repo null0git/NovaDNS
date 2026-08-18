@@ -1,0 +1,40 @@
+{% extends "install/_wizard_base.html" %}
+{% block wizard_body %}
+<div class="eyebrow">Step 1 of {{ steps|length }}</div>
+<h2 style="margin:8px 0 6px;">Welcome to NovaDNS</h2>
+<p style="color:var(--text-muted); margin:0 0 20px;">Let's get your DNS server ready. This wizard checks your environment, then walks through network, security, and content settings.</p>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-head"><h3>System checks</h3></div>
+  <div class="card-pad" style="display:flex; flex-direction:column; gap:12px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span>Python runtime</span>
+      <span class="badge badge-green">{{ icon('check') }} OK — {{ checks.os.python_version }}</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span>Operating system</span>
+      <span class="badge badge-blue">{{ checks.os.system }} {{ checks.os.release }}</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span>Write access to data directory</span>
+      <span class="badge badge-green">{{ icon('check') }} OK</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span>DNS port availability (5353 dev / 53 production)</span>
+      {% if checks.dns_port_free %}
+      <span class="badge badge-green">{{ icon('check') }} Free</span>
+      {% else %}
+      <span class="badge badge-amber">{{ icon('alert-triangle') }} In use — pick another port later</span>
+      {% endif %}
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span>Free disk space</span>
+      <span class="badge badge-blue">{{ checks.disk_free_gb }} GB</span>
+    </div>
+  </div>
+</div>
+
+<div style="display:flex; justify-content:flex-end;">
+  <a class="btn btn-primary" href="{{ url_for('install.wizard', step='network') }}">Continue {{ icon('logout') }}</a>
+</div>
+{% endblock %}

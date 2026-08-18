@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block page_title %}Client Groups{% endblock %}
+{% block content %}
+<p style="color:var(--text-muted); margin-top:0; max-width:640px;">Name a set of IPs/CIDRs once, then reference it as <span class="mono">group:name</span> anywhere a client match is accepted — Split DNS records, rewrite rules, and filtering entries all understand it.</p>
+
+<div class="card" style="margin-bottom:20px; max-width:520px;">
+  <div class="card-head"><h3>{{ icon('plus') }} &nbsp;New group</h3></div>
+  <div class="card-pad">
+    <div class="field"><label>Name</label><input id="ng-name" placeholder="kids"></div>
+    <div class="field"><label>Description (optional)</label><input id="ng-desc" placeholder="Kids' devices"></div>
+    <button class="btn btn-primary" onclick="addGroup()">Create</button>
+  </div>
+</div>
+
+<div class="grid grid-2 stagger">
+  {% for item in groups %}
+  <div class="card">
+    <div class="card-head" style="justify-content:space-between;">
+      <h3 class="mono">group:{{ item.group.name }}</h3>
+      <button class="btn btn-sm btn-danger" onclick="delGroup({{ item.group.id }})">{{ icon('trash') }}</button>
+    </div>
+    <div class="card-pad">
+      {% if item.group.description %}<p style="color:var(--text-muted); margin-top:0;">{{ item.group.description }}</p>{% endif %}
+      <div class="table-wrap"><table>
+        <tbody>
+          {% for e in item.entries %}
+          <tr><td class="mono">{{ e.cidr_or_ip }}</td><td style="text-align:right;"><button class="btn btn-sm btn-ghost" onclick="delEntry({{ e.id }})">{{ icon('x') }}</button></td></tr>
+          {% else %}
+          <tr><td class="empty-state">No members yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <input class="mono" id="entry-{{ item.group.id }}" placeholder="192.168.1.100 or 10.0.0.0/24" style="flex:1;">
+        <button class="btn btn-sm btn-outline" onclick="addEntry({{ item.group.id }})">Add</button>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty-state" style="grid-column:1/-1;">
+    <div class="glyph">{{ icon('devices') }}</div>
+    No client groups yet.
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function addGroup(){
+  const body = { name: document.getElementById('ng-name').value, description: document.getElementById('ng-desc').value };
+  Nova.api("{{ url_for('groups.add') }}", {method:"POST", body}).then(()=>location.reload());
+}
+function delGroup(id){ if(Nova.confirmDanger("Delete this group?")) Nova.api(`/groups/${id}/delete`, {method:"POST"}).then(()=>location.reload()); }
+function addEntry(gid){
+  const input = document.getElementById(`entry-${gid}`);
+  Nova.api(`/groups/${gid}/entries/add`, {method:"POST", body:{cidr_or_ip: input.value}}).then(()=>location.reload());
+}
+function delEntry(eid){ Nova.api(`/groups/entries/${eid}/delete`, {method:"POST"}).then(()=>location.reload()); }
+</script>
+{% endblock %}

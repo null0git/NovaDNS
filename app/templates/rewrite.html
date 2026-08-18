@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block page_title %}Rewrite Rules{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+  <p style="color:var(--text-muted); margin:0; max-width:560px;">Override what a query resolves to — by exact name, wildcard, or regex — optionally scoped to a client or time window.</p>
+  <button class="btn btn-primary" onclick="Nova.openModal('add-rule-modal')">{{ icon('plus') }} Add rule</button>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-head"><h3>{{ icon('wand') }} &nbsp;Simulate a query</h3></div>
+  <div class="card-pad" style="display:flex; gap:10px; align-items:flex-end;">
+    <div class="field" style="margin:0; flex:1;"><label>Name</label><input class="mono" id="sim-qname" placeholder="example.com"></div>
+    <div class="field" style="margin:0; width:110px;"><label>Type</label><input class="mono" id="sim-qtype" value="A"></div>
+    <div class="field" style="margin:0; flex:1;"><label>Client IP</label><input class="mono" id="sim-client" placeholder="192.168.1.10"></div>
+    <button class="btn btn-outline" onclick="simulate()">Run</button>
+  </div>
+  <div id="sim-result" class="card-pad" style="display:none; border-top:1px solid var(--border);"></div>
+</div>
+
+<div class="card">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th>Match</th><th>Pattern</th><th>Type</th><th>Scope</th><th>Priority</th><th>Hits</th><th></th></tr></thead>
+    <tbody>
+      {% for r in rules %}
+      <tr>
+        <td>{{ r.name }}</td>
+        <td><span class="badge badge-blue">{{ r.match_type }}</span></td>
+        <td class="mono">{{ r.pattern }}</td>
+        <td><span class="badge badge-purple">{{ r.rtype }}</span></td>
+        <td class="mono">{{ r.client_match or 'all' }}{% if r.time_start %} · {{ r.time_start }}-{{ r.time_end }}{% endif %}</td>
+        <td class="mono">{{ r.priority }}</td>
+        <td class="mono">{{ r.hits }}</td>
+        <td style="text-align:right; white-space:nowrap;">
+          <button class="btn btn-sm btn-outline" onclick="toggleRule({{ r.id }})">{{ 'Disable' if r.enabled else 'Enable' }}</button>
+          <button class="btn btn-sm btn-danger" onclick="delRule({{ r.id }})">{{ icon('trash') }}</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="empty-state">No rewrite rules yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="modal-backdrop" id="add-rule-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Add rewrite rule</h3><button class="icon-btn" style="margin-left:auto;" data-close-modal="add-rule-modal">{{ icon('x') }}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Name</label><input id="ru-name" placeholder="Redirect ads domain"></div>
+      <div class="field-row">
+        <div class="field"><label>Match type</label><select id="ru-matchtype"><option value="exact">Exact</option><option value="wildcard">Wildcard</option><option value="regex">Regex</option></select></div>
+        <div class="field"><label>Record type</label><select id="ru-rtype"><option>A</option><option>AAAA</option><option>CNAME</option><option>TXT</option></select></div>
+      </div>
+      <div class="field"><label>Pattern</label><input class="mono" id="ru-pattern" placeholder="*.ads.example.com"></div>
+      <div class="field"><label>Rewrite value</label><input class="mono" id="ru-value" placeholder="0.0.0.0 or target host"></div>
+      <div class="field-row">
+        <div class="field"><label>Client match (CIDR, optional)</label><input class="mono" id="ru-client" placeholder="192.168.1.0/24"></div>
+        <div class="field"><label>Priority</label><input class="mono" id="ru-priority" value="100"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Active from (optional)</label><input class="mono" id="ru-timestart" placeholder="22:00"></div>
+        <div class="field"><label>Active until (optional)</label><input class="mono" id="ru-timeend" placeholder="06:00"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal="add-rule-modal">Cancel</button>
+      <button class="btn btn-primary" onclick="submitRule()">Add rule</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function submitRule(){
+  const body = {
+    name: document.getElementById('ru-name').value, match_type: document.getElementById('ru-matchtype').value,
+    rtype: document.getElementById('ru-rtype').value, pattern: document.getElementById('ru-pattern').value,
+    value: document.getElementById('ru-value').value, client_match: document.getElementById('ru-client').value,
+    priority: document.getElementById('ru-priority').value, time_start: document.getElementById('ru-timestart').value,
+    time_end: document.getElementById('ru-timeend').value,
+  };
+  Nova.api("{{ url_for('rewrite.add') }}", {method:"POST", body}).then(()=>location.reload());
+}
+function delRule(id){ if(Nova.confirmDanger("Remove this rule?")) Nova.api(`/rewrite/${id}`, {method:"DELETE"}).then(()=>location.reload()); }
+function toggleRule(id){ Nova.api(`/rewrite/${id}/toggle`, {method:"POST"}).then(()=>location.reload()); }
+function simulate(){
+  const body = { qname: document.getElementById('sim-qname').value, qtype: document.getElementById('sim-qtype').value,
+                 client_ip: document.getElementById('sim-client').value || '127.0.0.1' };
+  Nova.api("{{ url_for('rewrite.simulate') }}", {method:"POST", body}).then(d=>{
+    const box = document.getElementById('sim-result');
+    box.style.display='block';
+    box.innerHTML = d.matched
+      ? `<span class="badge badge-green">Matched</span> &nbsp; would return <span class="mono">${JSON.stringify(d.value)}</span> (TTL ${d.ttl})`
+      : `<span class="badge badge-gray">No rule matched</span>`;
+  });
+}
+</script>
+{% endblock %}

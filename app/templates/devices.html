@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block page_title %}Device Setup Center{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:20px; border-color:var(--accent);">
+  <div class="card-head"><h3>{{ icon('wifi') }} &nbsp;If a device isn't resolving anything</h3></div>
+  <div class="card-pad" style="display:flex; flex-direction:column; gap:10px;">
+    <div style="display:flex; gap:10px;"><span class="badge badge-blue">1</span><span>The device must be on <b>port 53</b> — phones/PCs/routers never let you pick a custom port in their DNS settings, so the server has to be listening there. NovaDNS defaults to 53 now; check Settings → Network &amp; Security to confirm.</span></div>
+    <div style="display:flex; gap:10px;"><span class="badge badge-blue">2</span><span>The host firewall must allow inbound UDP/TCP 53 from your LAN. See the commands below.</span></div>
+    <div style="display:flex; gap:10px;"><span class="badge badge-blue">3</span><span>The device must be on the <b>same network</b> as the server (same Wi-Fi/LAN) — a phone on cellular data won't reach a private IP.</span></div>
+    <div style="display:flex; gap:10px;"><span class="badge badge-blue">4</span><span>Easiest for "my phone and my PC": set the DNS server IP once in your <b>router's</b> DHCP settings so every device on the network picks it up automatically, instead of configuring each device by hand.</span></div>
+    <div style="display:flex; gap:10px;"><span class="badge badge-blue">5</span><span>Test from another machine on the network: <span class="mono">dig @{{ ips[0] }} google.com</span> (or <span class="mono">nslookup google.com {{ ips[0] }}</span> on Windows).</span></div>
+  </div>
+  <div class="table-wrap" style="border-top:1px solid var(--border);"><table>
+    <thead><tr><th>Host OS</th><th>Allow inbound DNS (port 53)</th></tr></thead>
+    <tbody>
+      <tr><td>Linux (ufw)</td><td class="mono">sudo ufw allow 53/udp && sudo ufw allow 53/tcp</td></tr>
+      <tr><td>Linux (firewalld)</td><td class="mono">sudo firewall-cmd --add-service=dns --permanent && sudo firewall-cmd --reload</td></tr>
+      <tr><td>Windows (PowerShell, admin)</td><td class="mono">New-NetFirewallRule -DisplayName "NovaDNS" -Direction Inbound -Protocol UDP -LocalPort 53 -Action Allow</td></tr>
+      <tr><td>macOS</td><td class="mono">sudo pfctl -d &nbsp;(or allow port 53 in System Settings → Firewall → Options)</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-pad">
+    <label>Your NovaDNS server address{{ 'es' if ips|length > 1 else '' }}</label>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+      {% for ip in ips %}
+      <div class="copybox"><span>{{ ip }}</span><button class="btn btn-sm btn-ghost" data-copy="{{ ip }}">{{ icon('copy') }}</button></div>
+      {% endfor %}
+    </div>
+    <div class="help">Port {{ port }}. Most devices only need the IP — the port is implied.</div>
+  </div>
+</div>
+
+<div class="tabs" id="platform-tabs">
+  {% for p in platforms %}
+  <div class="tab {{ 'active' if loop.first }}" data-target="tab-{{ p.id }}">{{ p.name }}</div>
+  {% endfor %}
+</div>
+
+{% for p in platforms %}
+<div class="card platform-pane" id="tab-{{ p.id }}" style="{{ '' if loop.first else 'display:none;' }} margin-bottom:16px;">
+  <div class="card-pad" style="display:flex; gap:24px; flex-wrap:wrap;">
+    <ol style="flex:1; min-width:280px; margin:0; padding-left:18px; color:var(--text); line-height:1.9;">
+      {% for step in p.steps %}<li>{{ step }}</li>{% endfor %}
+    </ol>
+    {% if p.id in ('android','ios') %}
+    <div style="text-align:center;">
+      <img alt="QR code for server IP" width="140" height="140" style="border-radius:8px; border:1px solid var(--border);"
+        src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data={{ ips[0] }}">
+      <div class="help">Scan for the server IP</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+<div class="card">
+  <div class="card-head" style="justify-content:space-between;"><h3>Verify</h3></div>
+  <div class="card-pad" style="display:flex; align-items:center; gap:12px;">
+    <button class="btn btn-outline" onclick="verify()">Run a quick verification test</button>
+    <span id="verify-result" style="color:var(--text-muted);"></span>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('#platform-tabs .tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('#platform-tabs .tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.platform-pane').forEach(p=>p.style.display='none');
+  t.classList.add('active');
+  document.getElementById(t.dataset.target).style.display='block';
+}));
+function verify(){
+  fetch("{{ url_for('devices.verify', ip=ips[0]) }}").then(r=>r.json()).then(d=>{
+    document.getElementById('verify-result').innerHTML = d.ok
+      ? `<span class="badge badge-green">{{ icon('check') }} DNS server responding on ${d.ip}:${d.port}</span>`
+      : `<span class="badge badge-red">Server not responding — check the dashboard for bind errors</span>`;
+  });
+}
+</script>
+{% endblock %}

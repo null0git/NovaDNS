@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block page_title %}Terminal{% endblock %}
+{% block content %}
+<p style="color:var(--text-muted); margin-top:0;">A restricted terminal for diagnostics — only <span class="mono">dig</span>, <span class="mono">nslookup</span>, <span class="mono">ping</span>, and <span class="mono">traceroute</span> are permitted. Every command is written to the audit log.</p>
+<div class="card" style="background:#0A0D13;">
+  <div id="term-output" style="font-family:var(--font-mono); font-size:13px; padding:16px; height:420px; overflow-y:auto; color:#B9C2D6; white-space:pre-wrap;">NovaDNS terminal — type 'help' to list available commands.
+</div>
+  <div style="display:flex; align-items:center; gap:8px; border-top:1px solid var(--border); padding:10px 16px;">
+    <span class="mono" style="color:var(--accent);">novadns$</span>
+    <input id="term-input" class="mono" style="border:none; background:transparent; padding:4px; box-shadow:none;" autofocus autocomplete="off">
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const out = document.getElementById('term-output');
+const input = document.getElementById('term-input');
+input.addEventListener('keydown', e => {
+  if(e.key !== 'Enter' || !input.value.trim()) return;
+  const cmd = input.value;
+  out.textContent += `\nnovadns$ ${cmd}\n`;
+  input.value = '';
+  Nova.api("{{ url_for('terminal.exec_cmd') }}", {method:"POST", body:{command: cmd}}).then(d => {
+    if(d.output === '__CLEAR__'){ out.textContent = ''; return; }
+    out.textContent += d.output + '\n';
+    out.scrollTop = out.scrollHeight;
+  });
+});
+</script>
+{% endblock %}

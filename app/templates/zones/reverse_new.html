@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block page_title %}New Reverse DNS Zone{% endblock %}
+{% block content %}
+<div class="card" style="max-width:520px; margin:0 auto;">
+  <div class="card-head"><h3>{{ icon('globe') }} &nbsp;Create a reverse DNS zone</h3></div>
+  <div class="card-pad">
+    <p style="color:var(--text-muted); margin-top:0;">Enter a network and NovaDNS computes the correct <span class="mono">in-addr.arpa</span> / <span class="mono">ip6.arpa</span> zone name automatically.</p>
+    {% if error %}<div class="badge badge-red" style="width:100%;padding:10px;margin-bottom:14px;">{{ icon('alert-triangle') }} {{ error }}</div>{% endif %}
+    <form method="post">
+      <div class="field">
+        <label>Network (CIDR)</label>
+        <input class="mono" name="network" placeholder="10.0.0.0/24" required>
+        <div class="help">Supports /8, /16, /24 for IPv4, and nibble-aligned prefixes for IPv6.</div>
+      </div>
+      <div class="field">
+        <label>Default TTL (seconds)</label>
+        <input class="mono" name="default_ttl" value="3600">
+      </div>
+      <button class="btn btn-primary" style="width:100%;" type="submit">Create reverse zone</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

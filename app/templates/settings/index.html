@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+{% block page_title %}Settings{% endblock %}
+{% block content %}
+<div class="tabs" id="settings-tabs">
+  <div class="tab active" data-target="tab-general">General</div>
+  <div class="tab" data-target="tab-network">Network &amp; Security</div>
+  <div class="tab" data-target="tab-backups">Backups</div>
+  <div class="tab" data-target="tab-maintenance">Maintenance</div>
+  <div class="tab" data-target="tab-notifications">Notifications</div>
+  <div class="tab" data-target="tab-users">Users</div>
+  <div class="tab" data-target="tab-dyndns">Dynamic DNS</div>
+</div>
+
+<div id="tab-general" class="settings-pane">
+  <div class="card" style="max-width:520px;">
+    <div class="card-head"><h3>Branding</h3></div>
+    <div class="card-pad">
+      <form onsubmit="return saveGeneral(event)">
+        <div class="field"><label>Site name</label><input name="site_name" value="{{ s.get('site_name','NovaDNS') }}"></div>
+        <div class="field"><label>Accent color</label><input type="color" name="accent_color" value="{{ s.get('accent_color','#4C8CFF') }}" style="height:40px; padding:4px;"></div>
+        <div class="field"><label>Default theme</label>
+          <select name="default_theme">
+            <option value="system" {{ 'selected' if s.get('default_theme')=='system' }}>System</option>
+            <option value="light" {{ 'selected' if s.get('default_theme')=='light' }}>Light</option>
+            <option value="dark" {{ 'selected' if s.get('default_theme')=='dark' }}>Dark</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </form>
+    </div>
+  </div>
+  <div class="card" style="max-width:520px; margin-top:16px;">
+    <div class="card-head"><h3>Custom logo</h3></div>
+    <div class="card-pad">
+      {% if logo_ext %}<img src="{{ url_for('auth.logo_file') }}" alt="" style="width:48px;height:48px;border-radius:10px;object-fit:cover;margin-bottom:12px;">{% endif %}
+      <div class="field"><input type="file" id="logo-file" accept=".png,.jpg,.jpeg,.webp,.svg"></div>
+      <button class="btn btn-outline" onclick="uploadLogo()">Upload</button>
+      {% if logo_ext %}<button class="btn btn-ghost" onclick="removeLogo()">Remove</button>{% endif %}
+    </div>
+  </div>
+  <div class="card" style="max-width:520px; margin-top:16px;">
+    <div class="card-head"><h3>Re-run setup wizard</h3></div>
+    <div class="card-pad">
+      <p class="help" style="margin-top:0;">Walk back through network, upstream, and filtering setup.</p>
+      <a class="btn btn-outline" href="{{ url_for('install.rerun') }}">Re-run wizard</a>
+    </div>
+  </div>
+</div>
+
+<div id="tab-network" class="settings-pane" style="display:none;">
+  <div class="card" style="max-width:560px; margin-bottom:16px;">
+    <div class="card-head"><h3>DNS listener</h3></div>
+    <div class="card-pad">
+      <div class="badge {{ 'badge-green' if dns_running else 'badge-red' }}" style="width:100%; padding:10px; margin-bottom:14px;">
+        {{ icon('check') if dns_running else icon('alert-triangle') }}
+        Currently listening on {{ dns_bind_addr_global }}:{{ dns_port_global }} — {{ 'running' if dns_running else 'not running' }}
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Bind address</label><input class="mono" id="net-bind" value="{{ s.get('dns_bind_addr', dns_bind_addr_global or '0.0.0.0') }}"></div>
+        <div class="field"><label>DNS port</label><input class="mono" id="net-port" value="{{ s.get('dns_port', dns_port_global or 53) }}"></div>
+      </div>
+      <div class="help" style="margin-bottom:12px;">Devices' built-in DNS settings can't specify a port — leave this at <b>53</b> for phones/PCs/routers to work. Changes here take effect after you restart NovaDNS.</div>
+      <div class="field"><label>Allowed client networks (CIDR, comma-separated — blank = allow all)</label>
+        <input class="mono" id="net-acl" value="{{ s.get('acl_networks','') }}" placeholder="192.168.1.0/24, 10.0.0.0/8">
+      </div>
+      <div class="field"><label>Zone transfer (AXFR) allow-list — blank = refuse for everyone (secure default)</label>
+        <input class="mono" id="net-axfr-acl" value="{{ s.get('axfr_allowed_clients','') }}" placeholder="10.0.0.5, 192.168.1.0/28">
+        <div class="help">Only secondary/slave DNS servers you trust should be listed here.</div>
+      </div>
+      <button class="btn btn-primary" onclick="saveNetwork()">Save</button>
+    </div>
+  </div>
+  <div class="card" style="max-width:560px; margin-bottom:16px;">
+    <div class="card-head"><h3>Admin UI HTTPS</h3></div>
+    <div class="card-pad">
+      <div id="tls-status" class="help" style="margin-bottom:12px;">Loading…</div>
+      <div class="field"><label>Certificate hostname / IP</label><input class="mono" id="tls-cn" placeholder="novadns.local"></div>
+      <div class="help" style="margin-bottom:12px;">Self-signed — browsers will show a trust warning. For a publicly-trusted certificate, put NovaDNS behind a reverse proxy (Caddy/nginx) instead. Takes effect after restart.</div>
+      <button class="btn btn-primary" onclick="generateTls()">Generate &amp; enable HTTPS</button>
+      <button class="btn btn-outline" onclick="disableTls()">Disable</button>
+    </div>
+  </div>
+  <div class="card" style="max-width:560px;">
+    <div class="card-head"><h3>Rate limiting</h3></div>
+    <div class="card-pad">
+      <div class="field-row">
+        <div class="field"><label>Sustained queries / sec per client</label><input class="mono" id="rl-refill" value="{{ s.get('ratelimit_refill', 100) }}"></div>
+        <div class="field"><label>Burst capacity</label><input class="mono" id="rl-capacity" value="{{ s.get('ratelimit_capacity', 200) }}"></div>
+      </div>
+      <div class="help" style="margin-bottom:12px;">Protects against misbehaving devices or abuse. Set queries/sec to 0 to disable limiting. Applies immediately, no restart needed.</div>
+      <button class="btn btn-primary" onclick="saveRatelimit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="tab-backups" class="settings-pane" style="display:none;">
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-head" style="justify-content:space-between;"><h3>Create backup</h3></div>
+    <div class="card-pad" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+      <div class="field" style="margin:0;"><label>Encryption password (optional)</label><input type="password" id="bk-password" style="width:240px;"></div>
+      <button class="btn btn-primary" onclick="createBackup()">{{ icon('download') }} Create backup now</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Backup history</h3></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Filename</th><th>Type</th><th>Size</th><th>Encrypted</th><th>Created</th><th></th></tr></thead>
+      <tbody>
+        {% for b in backups %}
+        <tr><td class="mono">{{ b.filename }}</td><td><span class="badge badge-blue">{{ b.btype }}</span></td>
+          <td class="mono">{{ (b.size_bytes/1024)|round(1) }} KB</td>
+          <td>{% if b.encrypted %}<span class="badge badge-green">yes</span>{% else %}<span class="badge badge-gray">no</span>{% endif %}</td>
+          <td style="color:var(--text-faint);">{{ b.created_at | dtfmt }}</td>
+          <td style="text-align:right; white-space:nowrap;">
+            <a class="btn btn-sm btn-outline" href="{{ url_for('settings.backup_download', filename=b.filename) }}">{{ icon('download') }}</a>
+            <button class="btn btn-sm btn-danger" onclick="delBackup('{{ b.filename }}')">{{ icon('trash') }}</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="empty-state">No backups yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div id="tab-maintenance" class="settings-pane" style="display:none;">
+  <div class="card" style="max-width:520px;">
+    <div class="card-head"><h3>Maintenance mode</h3></div>
+    <div class="card-pad">
+      <div class="field" style="display:flex; align-items:center; gap:10px;">
+        <label class="switch"><input type="checkbox" id="maint-enabled" {{ 'checked' if maintenance and maintenance.enabled }}><span class="slider"></span></label>
+        <label style="margin:0;">Enabled</label>
+      </div>
+      <div class="field"><label>Message shown to admins</label><textarea id="maint-message" rows="3">{{ maintenance.message if maintenance else '' }}</textarea></div>
+      <button class="btn btn-primary" onclick="saveMaintenance()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="tab-notifications" class="settings-pane" style="display:none;">
+  <div class="grid grid-2">
+    {% for ch in channels %}
+    <div class="card">
+      <div class="card-head" style="justify-content:space-between;"><h3 style="text-transform:capitalize;">{{ ch }}</h3>
+        <label class="switch"><input type="checkbox" id="notif-{{ ch }}-enabled" {{ 'checked' if notif.get(ch) and notif[ch].enabled }}><span class="slider"></span></label>
+      </div>
+      <div class="card-pad">
+        {% if ch == 'email' %}
+        <div class="field-row">
+          <div class="field"><label>SMTP host</label><input class="mono" id="notif-email-host" placeholder="smtp.gmail.com"></div>
+          <div class="field"><label>Port</label><input class="mono" id="notif-email-port" value="587"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Username</label><input class="mono" id="notif-email-username"></div>
+          <div class="field"><label>Password</label><input type="password" id="notif-email-password"></div>
+        </div>
+        <div class="field"><label>Send alerts to</label><input class="mono" id="notif-email-to" placeholder="you@example.com"></div>
+        {% else %}
+        <div class="field"><label>{{ 'Bot token:chat_id' if ch=='telegram' else 'Webhook URL' }}</label>
+          <input class="mono" id="notif-{{ ch }}-config" placeholder="{{ '123456:ABC-token:987654321' if ch=='telegram' else 'https://...' }}">
+        </div>
+        {% endif %}
+        <button class="btn btn-sm btn-outline" onclick="saveNotif('{{ ch }}')">Save</button>
+        <button class="btn btn-sm btn-ghost" onclick="testNotif('{{ ch }}')">Send test</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div id="tab-users" class="settings-pane" style="display:none;">
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-head" style="justify-content:space-between;"><h3>Add user</h3></div>
+    <div class="card-pad" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+      <div class="field" style="margin:0;"><label>Username</label><input id="nu-username"></div>
+      <div class="field" style="margin:0;"><label>Password</label><input type="password" id="nu-password"></div>
+      <button class="btn btn-primary" onclick="addUser()">{{ icon('plus') }} Add</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="table-wrap"><table>
+      <thead><tr><th>Username</th><th>Role</th><th>Created</th><th>Last login</th><th></th></tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr><td class="mono">{{ u.username }}</td><td><span class="badge badge-blue">{{ u.role }}</span></td>
+        <td style="color:var(--text-faint);">{{ u.created_at | dtfmt }}</td><td style="color:var(--text-faint);">{{ u.last_login | dtfmt }}</td>
+        <td style="text-align:right;"><button class="btn btn-sm btn-danger" onclick="delUser({{ u.id }})">{{ icon('trash') }}</button></td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<div id="tab-dyndns" class="settings-pane" style="display:none;">
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-head" style="justify-content:space-between;"><h3>Register dynamic host</h3></div>
+    <div class="card-pad" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+      <div class="field" style="margin:0;"><label>Hostname</label><input class="mono" id="dd-hostname" placeholder="home.example.com"></div>
+      <div class="field" style="margin:0;"><label>Zone (optional)</label>
+        <select id="dd-zone"><option value="">— none —</option>{% for z in zones %}<option value="{{ z.id }}">{{ z.name }}</option>{% endfor %}</select>
+      </div>
+      <button class="btn btn-primary" onclick="addDyndns()">{{ icon('plus') }} Register</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="table-wrap"><table>
+      <thead><tr><th>Hostname</th><th>Last IP</th><th>Last update</th><th></th></tr></thead>
+      <tbody>
+        {% for d in dyndns %}
+        <tr><td class="mono">{{ d.hostname }}</td><td class="mono">{{ d.last_ip or '—' }}</td>
+        <td style="color:var(--text-faint);">{{ d.last_update | dtfmt if d.last_update else 'never' }}</td>
+        <td style="text-align:right;"><button class="btn btn-sm btn-danger" onclick="delDyndns({{ d.id }})">{{ icon('trash') }}</button></td></tr>
+        {% else %}
+        <tr><td colspan="4" class="empty-state">No dynamic DNS hosts registered.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('#settings-tabs .tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('#settings-tabs .tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.settings-pane').forEach(p=>p.style.display='none');
+  t.classList.add('active');
+  document.getElementById(t.dataset.target).style.display='block';
+}));
+function loadTlsStatus(){
+  fetch("{{ url_for('settings.tls_status') }}").then(r=>r.json()).then(d=>{
+    const box = document.getElementById('tls-status');
+    if(d.enabled && d.cert_exists) box.innerHTML = `<span class="badge badge-green">HTTPS enabled</span> cert expires in ${d.expiry_days} days`;
+    else box.innerHTML = `<span class="badge badge-gray">HTTP only</span>`;
+  });
+}
+function generateTls(){
+  const body = { common_name: document.getElementById('tls-cn').value || 'novadns.local' };
+  Nova.api("{{ url_for('settings.tls_generate') }}", {method:"POST", body}).then(()=>{
+    Nova.toast("Certificate generated — restart NovaDNS to serve over HTTPS"); loadTlsStatus();
+  });
+}
+function disableTls(){
+  Nova.api("{{ url_for('settings.tls_disable') }}", {method:"POST"}).then(()=>{ Nova.toast("HTTPS disabled — restart to apply"); loadTlsStatus(); });
+}
+loadTlsStatus();
+function saveNetwork(){
+  const body = { bind_addr: document.getElementById('net-bind').value, dns_port: document.getElementById('net-port').value,
+                 acl_networks: document.getElementById('net-acl').value,
+                 axfr_allowed_clients: document.getElementById('net-axfr-acl').value };
+  Nova.api("{{ url_for('settings.network') }}", {method:"POST", body}).then(()=>Nova.toast("Saved — restart NovaDNS to apply bind/port changes"));
+}
+function saveRatelimit(){
+  const body = { capacity: document.getElementById('rl-capacity').value, refill_per_sec: document.getElementById('rl-refill').value };
+  Nova.api("{{ url_for('settings.ratelimit') }}", {method:"POST", body}).then(()=>Nova.toast("Rate limit updated"));
+}
+function uploadLogo(){
+  const f = document.getElementById('logo-file').files[0];
+  if(!f) return Nova.toast("Choose a file first", "error");
+  const fd = new FormData(); fd.append('logo', f);
+  fetch("{{ url_for('settings.upload_logo') }}", {method:"POST", body:fd}).then(r=>r.json()).then(d=>{
+    if(d.ok){ Nova.toast("Logo updated"); location.reload(); } else Nova.toast(d.error, "error");
+  });
+}
+function removeLogo(){
+  Nova.api("{{ url_for('settings.remove_logo') }}", {method:"POST"}).then(()=>location.reload());
+}
+function saveGeneral(e){
+  e.preventDefault();
+  const f = e.target;
+  fetch("{{ url_for('settings.general') }}", {method:"POST", body:new FormData(f)}).then(()=>Nova.toast("Saved — reload to see branding changes"));
+  return false;
+}
+function createBackup(){
+  const password = document.getElementById('bk-password').value || null;
+  Nova.api("{{ url_for('settings.backup_create') }}", {method:"POST", body:{password}}).then(()=>location.reload());
+}
+function delBackup(fn){ if(Nova.confirmDanger("Delete this backup?")) Nova.api(`/settings/backups/${fn}/delete`, {method:"POST"}).then(()=>location.reload()); }
+function saveMaintenance(){
+  const body = { enabled: document.getElementById('maint-enabled').checked, message: document.getElementById('maint-message').value };
+  Nova.api("{{ url_for('settings.maintenance') }}", {method:"POST", body}).then(()=>Nova.toast("Maintenance settings saved"));
+}
+function saveNotif(ch){
+  const enabled = document.getElementById(`notif-${ch}-enabled`).checked;
+  let config;
+  if(ch === 'email'){
+    config = { host: document.getElementById('notif-email-host').value, port: document.getElementById('notif-email-port').value,
+               username: document.getElementById('notif-email-username').value, password: document.getElementById('notif-email-password').value,
+               to_addr: document.getElementById('notif-email-to').value };
+  } else {
+    config = { value: document.getElementById(`notif-${ch}-config`).value };
+  }
+  Nova.api(`/settings/notifications/${ch}`, {method:"POST", body:{enabled, config}}).then(()=>Nova.toast(`${ch} settings saved`));
+}
+function testNotif(ch){
+  Nova.toast("Sending test notification…");
+  Nova.api(`/settings/notifications/${ch}/test`, {method:"POST"}).then(d=>{
+    Nova.toast(d.ok ? "Test sent — check the channel" : `Failed: ${d.error}`, d.ok ? "success" : "error");
+  });
+}
+function addUser(){
+  const body = { username: document.getElementById('nu-username').value, password: document.getElementById('nu-password').value };
+  Nova.api("{{ url_for('settings.add_user') }}", {method:"POST", body}).then(()=>location.reload());
+}
+function delUser(id){ if(Nova.confirmDanger("Delete this user?")) Nova.api(`/settings/users/${id}/delete`, {method:"POST"}).then(()=>location.reload()); }
+function addDyndns(){
+  const body = { hostname: document.getElementById('dd-hostname').value, zone_id: document.getElementById('dd-zone').value };
+  Nova.api("{{ url_for('settings.dyndns_add') }}", {method:"POST", body}).then(d=>{
+    alert(`Update URL (save this, shown once):\n${d.update_url}`);
+    location.reload();
+  });
+}
+function delDyndns(id){ Nova.api(`/settings/dyndns/${id}/delete`, {method:"POST"}).then(()=>location.reload()); }
+</script>
+{% endblock %}

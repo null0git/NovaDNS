@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ site_name }}{% endblock %}</title>
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32.png') }}">
+<link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/favicon-16.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<script>
+  (function(){
+    var stored = localStorage.getItem('novadns-theme') || 'system';
+    var effective = stored === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark':'light') : stored;
+    document.documentElement.setAttribute('data-theme', effective);
+  })();
+</script>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      {% if logo_ext %}
+      <img src="{{ url_for('auth.logo_file') }}" alt="" style="width:30px;height:30px;border-radius:8px;object-fit:cover;">
+      {% else %}
+      <img src="{{ url_for('static', filename='img/logo-icon.png') }}" alt="{{ site_name }}" style="width:32px;height:32px;object-fit:contain;">
+      {% endif %}
+      <div class="name">{{ site_name }}<small>DNS PLATFORM</small></div>
+    </div>
+    <nav class="nav-group">
+      <div class="nav-label">Overview</div>
+      <a class="nav-link {{ 'active' if request.endpoint=='dashboard.home' }}" href="{{ url_for('dashboard.home') }}">
+        {{ icon('grid') }} Dashboard
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='monitoring.index' }}" href="{{ url_for('monitoring.index') }}">
+        {{ icon('activity') }} Monitoring
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='diagnostics.index' }}" href="{{ url_for('diagnostics.index') }}">
+        {{ icon('stethoscope') }} Diagnostics
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='benchmark.index' }}" href="{{ url_for('benchmark.index') }}">
+        {{ icon('cpu') }} Benchmark
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='inspector.index' }}" href="{{ url_for('inspector.index') }}">
+        {{ icon('search') }} Packet Inspector
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='compliance.index' }}" href="{{ url_for('compliance.index') }}">
+        {{ icon('check') }} RFC Compliance
+      </a>
+
+      <div class="nav-label">DNS</div>
+      <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('zones.') }}" href="{{ url_for('zones.list_zones') }}">
+        {{ icon('globe') }} Zones
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='forwarders.index' }}" href="{{ url_for('forwarders.index') }}">
+        {{ icon('shuffle') }} Forwarding
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='rewrite.index' }}" href="{{ url_for('rewrite.index') }}">
+        {{ icon('edit') }} Rewrite Rules
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='filtering.index' }}" href="{{ url_for('filtering.index') }}">
+        {{ icon('shield') }} Filtering
+      </a>
+
+      <div class="nav-label">Manage</div>
+      <a class="nav-link {{ 'active' if request.endpoint=='devices.index' }}" href="{{ url_for('devices.index') }}">
+        {{ icon('devices') }} Device Setup
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='groups.index' }}" href="{{ url_for('groups.index') }}">
+        {{ icon('layers') }} Client Groups
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='terminal.index' }}" href="{{ url_for('terminal.index') }}">
+        {{ icon('terminal') }} Terminal
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='audit.index' }}" href="{{ url_for('audit.index') }}">
+        {{ icon('list') }} Audit Log
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='settings.index' }}" href="{{ url_for('settings.index') }}">
+        {{ icon('settings') }} Settings
+      </a>
+
+      <div class="nav-label">Learn</div>
+      <a class="nav-link {{ 'active' if request.endpoint=='docs.index' }}" href="{{ url_for('docs.index') }}">
+        {{ icon('list') }} Documentation
+      </a>
+      <a class="nav-link {{ 'active' if request.endpoint=='architecture.index' }}" href="{{ url_for('architecture.index') }}">
+        {{ icon('layers') }} Architecture
+      </a>
+      <a class="nav-link" href="{{ url_for('lookup_portal.index') }}" target="_blank">
+        {{ icon('search') }} Public Lookup ↗
+      </a>
+      <a class="nav-link" href="{{ url_for('status.public_status') }}" target="_blank">
+        {{ icon('activity') }} Public Status ↗
+      </a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="server-pill">
+        <span class="pulse-dot {{ '' if dns_running else 'down' }}"></span>
+        DNS {{ 'online' if dns_running else 'offline' }}
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn" id="sidebar-toggle" style="display:none" aria-label="Toggle menu">{{ icon('menu') }}</button>
+      <h1>{% block page_title %}{% endblock %}</h1>
+      <div class="spacer"></div>
+      <div class="icon-btn" title="Toggle theme" style="position:relative;">
+        <details style="position:static;">
+          <summary style="list-style:none; cursor:pointer; display:flex; align-items:center;">{{ icon('sun-moon') }}</summary>
+          <div style="position:absolute; right:0; top:40px; background:var(--surface-raised); border:1px solid var(--border-strong); border-radius:8px; padding:4px; width:120px; box-shadow:var(--shadow-card); z-index:50;">
+            <div class="nav-link" data-theme-option="light" style="padding:7px 10px;">Light</div>
+            <div class="nav-link" data-theme-option="dark" style="padding:7px 10px;">Dark</div>
+            <div class="nav-link" data-theme-option="system" style="padding:7px 10px;">System</div>
+          </div>
+        </details>
+      </div>
+      {% if current_user %}
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('auth.logout') }}">{{ icon('logout') }} Sign out</a>
+      {% endif %}
+    </header>
+    <main class="content page-enter">
+      <div class="print-header">
+        <img src="{{ url_for('static', filename='img/logo-black.png') }}" alt="">
+        <span class="name">{{ site_name }} — {{ self.page_title() }}</span>
+      </div>
+      {% if dns_bind_error %}
+      <div class="card" style="border-color:var(--danger); background:var(--danger-soft); padding:14px 18px; margin-bottom:20px; display:flex; gap:12px; align-items:flex-start;">
+        <div style="color:var(--danger); flex-shrink:0; margin-top:2px;">{{ icon('alert-triangle') }}</div>
+        <div style="flex:1;">
+          <div style="font-weight:600; color:var(--text);">DNS server isn't listening on {{ dns_bind_addr_global }}:{{ dns_port_global }} — devices on your network can't resolve anything right now.</div>
+          <div class="help" style="margin:6px 0;">{{ dns_bind_error }}</div>
+          {% if dns_port_global == 53 %}
+          <div class="help">Port 53 needs elevated privileges. Run one of these, then restart NovaDNS:</div>
+          <div class="copybox" style="margin-top:6px;"><span>sudo setcap 'cap_net_bind_service=+ep' $(which python3)</span><button class="btn btn-sm btn-ghost" data-copy="sudo setcap 'cap_net_bind_service=+ep' $(which python3)">{{ icon('copy') }}</button></div>
+          <div class="copybox" style="margin-top:6px;"><span>sudo python3 run.py</span><button class="btn btn-sm btn-ghost" data-copy="sudo python3 run.py">{{ icon('copy') }}</button></div>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pulse.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

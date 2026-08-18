@@ -1,0 +1,24 @@
+{% extends "install/_wizard_base.html" %}
+{% block wizard_body %}
+<div class="eyebrow">Step 7 of {{ steps|length }}</div>
+<h2 style="margin:8px 0 6px;">Family Safe DNS</h2>
+<p style="color:var(--text-muted); margin:0 0 20px;">Turn on category filtering now, or skip and configure it later under Filtering.</p>
+<form method="post" action="{{ url_for('install.save_step', step='family') }}">
+  <div class="grid grid-3" style="margin-bottom:16px;">
+    {% for id, label in [('malware','Malware'), ('phishing','Phishing'), ('scam','Scam'), ('ransomware','Ransomware'), ('botnet','Botnet'), ('adult','Adult content'), ('gambling','Gambling'), ('violence','Violence'), ('drugs','Drugs')] %}
+    <label style="display:flex; align-items:center; gap:8px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-weight:500; color:var(--text);">
+      <input type="checkbox" name="categories" value="{{ id }}" {{ 'checked' if id in ['malware','phishing','scam','ransomware','botnet'] }} style="width:auto;">
+      {{ label }}
+    </label>
+    {% endfor %}
+  </div>
+  <div class="field" style="display:flex; align-items:center; gap:10px;">
+    <label class="switch"><input type="checkbox" name="safesearch"><span class="slider"></span></label>
+    <label style="margin:0;">Enforce SafeSearch on major search engines</label>
+  </div>
+  <div style="display:flex; justify-content:space-between;">
+    <a class="btn btn-outline" href="{{ url_for('install.wizard', step='security') }}">Back</a>
+    <button class="btn btn-primary" type="submit">Continue</button>
+  </div>
+</form>
+{% endblock %}

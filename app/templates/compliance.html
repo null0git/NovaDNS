@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block page_title %}RFC Compliance{% endblock %}
+{% block content %}
+<p style="color:var(--text-muted); margin-top:0; max-width:640px;">Every number below comes from actually running NovaDNS's own test suite against its own code, live, right now — not a static claim. Click "Run tests" to re-verify.</p>
+
+<div style="display:flex; gap:10px; margin-bottom:18px; align-items:center;">
+  <input class="mono" id="rfc-search" placeholder="Search RFCs or modules…" style="max-width:320px;">
+  <button class="btn btn-primary" onclick="runTests()">{{ icon('refresh') }} Run tests</button>
+  <span id="run-summary" style="color:var(--text-muted); font-size:13px;"></span>
+</div>
+
+<div id="rfc-list" class="stagger" style="display:flex; flex-direction:column; gap:14px;">
+  <div class="card card-pad"><div class="skel skel-row"></div><div class="skel skel-row" style="width:70%"></div></div>
+</div>
+
+<div class="card" style="margin-top:20px;">
+  <div class="card-head"><h3>Not yet implemented</h3><span class="sub">listed honestly, not silently omitted</span></div>
+  <div id="not-impl" class="card-pad"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let lastResult = null;
+
+function statusBadge(status){
+  if(status === 'fully_passing') return '<span class="badge badge-green">✓ Fully passing</span>';
+  if(status === 'has_failures') return '<span class="badge badge-red">Failures found</span>';
+  return '<span class="badge badge-gray">No tests yet</span>';
+}
+
+function statusIcon(status){
+  if(status === 'pass') return '✓';
+  if(status === 'skip') return '○';
+  return '✗';
+}
+
+function renderRfcs(filter){
+  const box = document.getElementById('rfc-list');
+  const f = (filter || '').toLowerCase();
+  const items = lastResult.rfcs.filter(r =>
+    !f || r.title.toLowerCase().includes(f) || r.modules.some(m => m.toLowerCase().includes(f)));
+  box.innerHTML = items.map(r => `
+    <div class="card">
+      <div class="card-head" style="justify-content:space-between;">
+        <h3>${r.title}</h3>
+        ${statusBadge(r.status)}
+      </div>
+      <div class="card-pad">
+        <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:14px;">
+          <div><div class="eyebrow">Compliance</div><div style="font-family:var(--font-display); font-size:22px; font-weight:700;">${r.compliance_pct !== null ? r.compliance_pct + '%' : '—'}</div></div>
+          <div><div class="eyebrow">Tests</div><div style="font-family:var(--font-display); font-size:22px; font-weight:700;">${r.tests_passed} <span style="color:var(--success);">passed</span>${r.tests_failed ? `, ${r.tests_failed} <span style="color:var(--danger);">failed</span>` : ''}${r.tests_skipped ? `, ${r.tests_skipped} <span style="color:var(--text-faint);">skipped</span>` : ''}</div></div>
+        </div>
+        <div class="eyebrow" style="margin-bottom:8px;">Modules covered</div>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+          ${r.modules.map(m => `<span class="badge badge-blue">${m}</span>`).join('')}
+        </div>
+        ${r.tests.length ? `<div class="eyebrow" style="margin-bottom:8px;">Test detail</div>
+        <div style="font-family:var(--font-mono); font-size:12px; color:var(--text-muted);">
+          ${r.tests.map(t => `<div title="${(t.detail||'').replace(/"/g,'&quot;')}">${statusIcon(t.status)} ${t.class}.${t.name}${t.status==='skip' ? ' (skipped: '+(t.detail||'')+')' : ''}</div>`).join('')}
+        </div>` : ''}
+      </div>
+    </div>
+  `).join('') || '<div class="empty-state">No RFCs match your search.</div>';
+}
+
+function showError(message){
+  document.getElementById('run-summary').innerHTML = `<span class="badge badge-red">${message}</span>`;
+  document.getElementById('rfc-list').innerHTML = `
+    <div class="card card-pad">
+      <div style="display:flex; gap:10px; align-items:flex-start;">
+        <span style="color:var(--danger); flex-shrink:0;">{{ icon('alert-triangle') }}</span>
+        <div>
+          <b>The test run didn't complete.</b>
+          <p style="color:var(--text-muted); margin:6px 0 10px;">${message}</p>
+          <button class="btn btn-sm btn-outline" onclick="runTests()">{{ icon('refresh') }} Try again</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function runTests(){
+  document.getElementById('run-summary').textContent = 'Running…';
+  document.getElementById('rfc-list').innerHTML = `<div class="card card-pad"><div class="skel skel-row"></div><div class="skel skel-row" style="width:70%"></div></div>`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);  // don't hang forever if the server never responds
+
+  fetch("{{ url_for('compliance.run') }}", { signal: controller.signal })
+    .then(r => r.json().then(d => ({ ok: r.ok, status: r.status, body: d })))
+    .then(({ ok, status, body }) => {
+      clearTimeout(timeoutId);
+      if (!ok || body.error) {
+        showError(body.error || `Server returned HTTP ${status}`);
+        return;
+      }
+      lastResult = body;
+      document.getElementById('run-summary').textContent =
+        `${body.total_passed}/${body.total_run} tests passed` +
+        (body.total_skipped ? `, ${body.total_skipped} skipped` : '') +
+        ` in ${body.elapsed_sec}s`;
+      renderRfcs(document.getElementById('rfc-search').value);
+      document.getElementById('not-impl').innerHTML = body.not_implemented.map(n => `
+        <div style="display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--border);">
+          <span class="badge badge-gray">${n.tag}</span>
+          <div><b>${n.title}</b><div style="color:var(--text-muted); font-size:12.5px;">${n.reason}</div></div>
+        </div>`).join('');
+    })
+    .catch(err => {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        showError('The test run timed out after 30 seconds. Check the server logs (logs/novadns.log) for what got stuck.');
+      } else {
+        showError(`Couldn't reach the server: ${err.message}. Check your connection and try again.`);
+      }
+    });
+}
+document.getElementById('rfc-search').addEventListener('input', e => { if(lastResult) renderRfcs(e.target.value); });
+runTests();
+</script>
+{% endblock %}

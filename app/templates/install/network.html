@@ -1,0 +1,47 @@
+{% extends "install/_wizard_base.html" %}
+{% block wizard_body %}
+<div class="eyebrow">Step 2 of {{ steps|length }}</div>
+<h2 style="margin:8px 0 6px;">Network detection</h2>
+<p style="color:var(--text-muted); margin:0 0 20px;">We detected the following on this machine. Devices on your network will point their DNS settings at whichever address you choose.</p>
+
+<div class="field">
+  <label>Detected hostname / FQDN</label>
+  <div class="copybox"><span class="mono">{{ hostname }} · {{ fqdn }}</span></div>
+</div>
+
+<form method="post" action="{{ url_for('install.save_step', step='network') }}">
+  <div class="field">
+    <label>Bind address</label>
+    <select name="bind_addr">
+      <option value="0.0.0.0">All interfaces (0.0.0.0) — recommended</option>
+      {% for ip in ips %}
+      <option value="{{ ip }}">{{ ip }} only</option>
+      {% endfor %}
+    </select>
+    <div class="help">Detected addresses: {{ ips|join(', ') }}</div>
+  </div>
+  <div class="field">
+    <label>DNS port</label>
+    <input class="mono" name="dns_port" value="53">
+    <div class="help">Port 53 requires elevated privileges on Linux/macOS. Use 5353 for a quick local test.</div>
+  </div>
+
+  <div class="card" style="margin:16px 0;">
+    <div class="card-head"><h3>Network interfaces</h3></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Interface</th><th>IPv4</th><th>IPv6</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for i in interfaces %}
+        <tr><td class="mono">{{ i.name }}</td><td class="mono">{{ i.ipv4 or '—' }}</td><td class="mono">{{ (i.ipv6[:20] + '…') if i.ipv6 else '—' }}</td>
+        <td>{% if i.up %}<span class="badge badge-green">up</span>{% else %}<span class="badge badge-gray">down</span>{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+
+  <div style="display:flex; justify-content:space-between;">
+    <a class="btn btn-outline" href="{{ url_for('install.wizard', step='welcome') }}">Back</a>
+    <button class="btn btn-primary" type="submit">Continue</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+
+<div class="pulse-strip" id="live-pulse" style="margin-bottom:20px;"></div>
+
+<div class="grid grid-4 stagger" style="margin-bottom:20px;">
+  <div class="card stat-card">
+    <div class="icon-chip">{{ icon('activity') }}</div>
+    <div class="label">Queries (24h)</div>
+    <div class="value">{{ queries_today }}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="icon-chip">{{ icon('globe') }}</div>
+    <div class="label">Zones / Records</div>
+    <div class="value">{{ zone_count }} <span style="font-size:14px;color:var(--text-faint);">/ {{ record_count }}</span></div>
+  </div>
+  <div class="card stat-card">
+    <div class="icon-chip">{{ icon('wifi') }}</div>
+    <div class="label">Active clients</div>
+    <div class="value">{{ client_count }}</div>
+  </div>
+  <div class="card stat-card">
+    <div class="icon-chip">{{ icon('layers') }}</div>
+    <div class="label">Cache hit ratio</div>
+    <div class="value">{{ cache_stats.hit_ratio }}%</div>
+  </div>
+</div>
+
+<div class="grid grid-3" style="margin-bottom:20px; align-items:stretch;">
+  <div class="card card-pad" style="grid-column:span 2; display:flex; flex-direction:column;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <h3>Queries per minute (last hour)</h3>
+      <span class="badge badge-blue mono">live</span>
+    </div>
+    <canvas id="qps-chart" style="width:100%; height:160px;"></canvas>
+  </div>
+  <div class="card card-pad" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;">
+    <h3 style="align-self:flex-start;">Server Health Score</h3>
+    <div class="health-ring">
+      <svg width="104" height="104">
+        <circle class="ring-bg" cx="52" cy="52" r="44" stroke-width="10" fill="none"/>
+        <circle class="ring-fg" cx="52" cy="52" r="44" stroke-width="10" fill="none"
+          stroke-dasharray="{{ 276 }}" stroke-dashoffset="{{ 276 - (276 * health.overall / 100) }}"/>
+      </svg>
+      <div class="ring-val"><b>{{ health.overall }}</b><span>out of 100</span></div>
+    </div>
+    <div class="help" style="text-align:center;">{{ health.recommendations[0] }}</div>
+  </div>
+</div>
+
+<div class="grid grid-3" style="margin-bottom:20px;">
+  <div class="card">
+    <div class="card-head"><h3>Top queried domains</h3><span class="sub">24h</span></div>
+    <div class="table-wrap"><table>
+      <tbody id="top-domains">
+        {% for d in top_domains %}
+        <tr><td class="mono">{{ d.qname }}</td><td style="text-align:right; color:var(--text-muted);">{{ d.c }}</td></tr>
+        {% else %}
+        <tr><td class="empty-state" colspan="2">No query data yet — point a device at this server to see traffic here.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Top clients</h3><span class="sub">24h</span></div>
+    <div class="table-wrap"><table>
+      <tbody>
+        {% for c in top_clients %}
+        <tr><td class="mono">{{ c.client_ip }}</td><td style="text-align:right; color:var(--text-muted);">{{ c.c }}</td></tr>
+        {% else %}
+        <tr><td class="empty-state" colspan="2">No clients seen yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Recent alerts</h3></div>
+    <div style="padding:8px 4px;">
+      {% for a in recent_alerts %}
+      <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 16px;">
+        <span class="badge {{ 'badge-red' if a.severity=='critical' else 'badge-amber' }}">{{ a.severity }}</span>
+        <span style="font-size:13px;">{{ a.message }}</span>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="glyph">{{ icon('check') }}</div>
+        No active alerts.
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-head" style="justify-content:space-between;">
+    <h3>Quick actions</h3>
+  </div>
+  <div class="card-pad" style="display:flex; gap:10px; flex-wrap:wrap;">
+    <a class="btn btn-primary" href="{{ url_for('zones.simple_mode') }}">{{ icon('plus') }} Add a domain</a>
+    <a class="btn btn-outline" href="{{ url_for('devices.index') }}">{{ icon('devices') }} Set up a device</a>
+    <a class="btn btn-outline" href="{{ url_for('filtering.index') }}">{{ icon('shield') }} Configure filtering</a>
+    <a class="btn btn-outline" href="{{ url_for('settings.index') }}#backups">{{ icon('download') }} Take a backup</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h3>Recent activity</h3><a href="{{ url_for('audit.index') }}" class="sub" style="margin-left:auto;">View all</a></div>
+  <div class="table-wrap"><table>
+    <tbody>
+      {% for e in recent_audit %}
+      <tr><td style="color:var(--text-faint); white-space:nowrap;">{{ e.ts | dtfmt }}</td><td>{{ e.action }}</td><td><span class="badge badge-gray">{{ e.category }}</span></td></tr>
+      {% else %}
+      <tr><td class="empty-state" colspan="3">Nothing logged yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+startPulsePolling('live-pulse', "{{ url_for('monitoring.api_recent') }}", 3500);
+fetch("{{ url_for('monitoring.api_series') }}").then(r=>r.json()).then(d => {
+  drawSparkline(document.getElementById('qps-chart'), d.qps, getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+});
+</script>
+{% endblock %}

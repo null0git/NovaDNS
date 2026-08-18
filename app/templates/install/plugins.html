@@ -1,0 +1,23 @@
+{% extends "install/_wizard_base.html" %}
+{% block wizard_body %}
+<div class="eyebrow">Step 9 of {{ steps|length }}</div>
+<h2 style="margin:8px 0 6px;">Plugins</h2>
+<p style="color:var(--text-muted); margin:0 0 20px;">Optional add-ons. You can enable or disable any of these later.</p>
+<form method="post" action="{{ url_for('install.save_step', step='plugins') }}">
+  <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px;">
+    {% for p in catalog %}
+    <label style="display:flex; align-items:flex-start; gap:10px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:12px;">
+      <input type="checkbox" name="plugins" value="{{ p.id }}" style="width:auto; margin-top:3px;">
+      <div>
+        <div style="font-weight:600; color:var(--text);">{{ p.name }}</div>
+        <div class="help" style="margin-top:2px;">{{ p.desc }}</div>
+      </div>
+    </label>
+    {% endfor %}
+  </div>
+  <div style="display:flex; justify-content:space-between;">
+    <a class="btn btn-outline" href="{{ url_for('install.wizard', step='database') }}">Back</a>
+    <button class="btn btn-primary" type="submit">Continue</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block page_title %}Zones{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+  <p style="color:var(--text-muted); margin:0; max-width:520px;">Authoritative zones NovaDNS answers for directly.</p>
+  <div style="display:flex; gap:10px;">
+    <a class="btn btn-outline" href="{{ url_for('zones.new_zone') }}">{{ icon('plus') }} Advanced zone</a>
+    <a class="btn btn-outline" href="{{ url_for('zones.new_reverse_zone') }}">{{ icon('globe') }} Reverse DNS zone</a>
+    <a class="btn btn-primary" href="{{ url_for('zones.simple_mode') }}">{{ icon('wand') }} Simple DNS Mode</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Zone</th><th>Type</th><th>Records</th><th>Default TTL</th><th>DNSSEC</th><th>Updated</th><th></th></tr></thead>
+    <tbody>
+      {% for z in zones %}
+      <tr>
+        <td><a href="{{ url_for('zones.detail', zone_id=z.id) }}" class="mono" style="color:var(--accent); font-weight:600;">{{ z.name }}</a></td>
+        <td><span class="badge badge-blue">{{ z.ztype }}</span></td>
+        <td>{{ z.record_count }}</td>
+        <td class="mono">{{ z.default_ttl }}s</td>
+        <td>{% if z.dnssec_enabled %}<span class="badge badge-green">on</span>{% else %}<span class="badge badge-gray">off</span>{% endif %}</td>
+        <td style="color:var(--text-faint);">{{ z.updated_at | dtfmt }}</td>
+        <td style="text-align:right;">
+          <button class="btn btn-sm btn-danger" onclick="delZone({{ z.id }}, '{{ z.name }}')">{{ icon('trash') }}</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty-state">
+        <div class="glyph">{{ icon('globe') }}</div>
+        No zones yet. <a href="{{ url_for('zones.simple_mode') }}" style="color:var(--accent);">Create your first one</a> in under a minute.
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function delZone(id, name){
+  if(!Nova.confirmDanger(`Delete zone "${name}" and all its records? This can't be undone.`)) return;
+  Nova.api(`/zones/${id}/delete`, {method:"POST"}).then(()=>location.reload());
+}
+</script>
+{% endblock %}

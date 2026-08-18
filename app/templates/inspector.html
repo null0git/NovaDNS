@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block page_title %}Packet Inspector{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-head" style="justify-content:space-between;"><h3>{{ icon('search') }} &nbsp;Input</h3>
+    <div style="display:flex; gap:6px;">
+      <button class="btn btn-sm btn-outline" onclick="loadSample('query')">Sample query</button>
+      <button class="btn btn-sm btn-outline" onclick="loadSample('response')">Sample response</button>
+      <button class="btn btn-sm btn-outline" onclick="loadSample('dnssec')">Sample DNSSEC</button>
+    </div>
+  </div>
+  <div class="card-pad">
+    <textarea class="mono" id="hex-input" rows="3" placeholder="Paste hex bytes, e.g. ab cd 01 00 00 01 ..."></textarea>
+    <div style="display:flex; gap:10px; margin-top:10px;">
+      <button class="btn btn-primary" onclick="parsePacket('a')">Parse into panel A</button>
+      <button class="btn btn-outline" onclick="parsePacket('b')">Parse into panel B (compare)</button>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-2" id="panels">
+  <div id="panel-a"></div>
+  <div id="panel-b"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function loadSample(kind){
+  fetch(`/inspector/sample/${kind}`).then(r=>r.json()).then(d=>{
+    document.getElementById('hex-input').value = d.hex.match(/.{1,2}/g).join(' ');
+  });
+}
+
+function rrRow(rr){
+  return `<tr><td class="mono">${rr.name}</td><td><span class="badge badge-purple">${rr.rtype}</span></td>
+    <td class="mono">${rr.ttl}</td><td class="mono" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${JSON.stringify(rr.value)}</td></tr>`;
+}
+
+function renderPacket(p){
+  const h = p.header;
+  return `
+    <div class="card">
+      <div class="card-head"><h3>Header</h3></div>
+      <div class="card-pad">
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+          <span class="badge badge-blue mono">ID ${h.id}</span>
+          <span class="badge ${h.qr ? 'badge-green' : 'badge-gray'}">QR=${h.qr} (${h.qr ? 'response' : 'query'})</span>
+          <span class="badge ${h.aa ? 'badge-green' : 'badge-gray'}">AA=${h.aa}</span>
+          <span class="badge ${h.tc ? 'badge-amber' : 'badge-gray'}">TC=${h.tc}</span>
+          <span class="badge ${h.rd ? 'badge-green' : 'badge-gray'}">RD=${h.rd}</span>
+          <span class="badge ${h.ra ? 'badge-green' : 'badge-gray'}">RA=${h.ra}</span>
+          <span class="badge ${h.rcode === 0 ? 'badge-green' : 'badge-red'} mono">RCODE=${h.rcode}</span>
+        </div>
+        <div class="mono" style="font-size:12.5px; color:var(--text-muted);">
+          QD=${h.qdcount} AN=${h.ancount} NS=${h.nscount} AR=${h.arcount} · ${p.length_bytes} bytes
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px;">
+      <div class="card-head"><h3>Hex</h3></div>
+      <div class="card-pad mono" style="font-size:11.5px; word-break:break-all; color:var(--text-muted);">${p.hex_grouped}</div>
+    </div>
+    <div class="card" style="margin-top:14px;">
+      <div class="card-head"><h3>Questions</h3></div>
+      <div class="table-wrap"><table><tbody>
+        ${p.questions.map(q => `<tr><td class="mono">${q.name}</td><td><span class="badge badge-blue">${q.qtype}</span></td></tr>`).join('') || '<tr><td class="empty-state">none</td></tr>'}
+      </tbody></table></div>
+    </div>
+    ${['answers','authority','additional'].map(section => p[section].length ? `
+    <div class="card" style="margin-top:14px;">
+      <div class="card-head"><h3>${section.charAt(0).toUpperCase()+section.slice(1)}</h3></div>
+      <div class="table-wrap"><table><tbody>${p[section].map(rrRow).join('')}</tbody></table></div>
+    </div>` : '').join('')}
+  `;
+}
+
+function parsePacket(panel){
+  const hex = document.getElementById('hex-input').value;
+  fetch("{{ url_for('inspector.parse') }}", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({hex})})
+    .then(r=>r.json()).then(d=>{
+      const target = document.getElementById(`panel-${panel}`);
+      if(!d.ok){ target.innerHTML = `<div class="badge badge-red" style="padding:10px;">${d.error}</div>`; return; }
+      target.innerHTML = renderPacket(d.packet);
+    });
+}
+</script>
+{% endblock %}

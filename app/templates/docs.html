@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+{% block page_title %}Documentation{% endblock %}
+{% block content %}
+<div style="display:flex; gap:28px; align-items:flex-start;">
+  <div style="width:220px; flex-shrink:0; position:sticky; top:76px; max-height:calc(100vh - 100px); overflow-y:auto;">
+    <input class="mono" id="docs-search" placeholder="Search documentation…" style="margin-bottom:6px;">
+    <nav id="docs-toc"></nav>
+  </div>
+  <div style="flex:1; min-width:0; max-width:760px;" id="docs-content"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const GROUPS = [
+  { name: "Getting Started", items: ["quickstart", "deployment", "architecture"] },
+  { name: "DNS Management", items: ["zones", "simplemode", "splitdns", "reversedns", "forwarding", "caching"] },
+  { name: "Security", items: ["dnssec", "filtering", "access-control", "dyndns"] },
+  { name: "Operations", items: ["monitoring", "backup", "importexport", "testing"] },
+  { name: "Reference", items: ["api", "troubleshooting", "faq"] },
+];
+
+const SECTIONS = {
+
+quickstart: { title: "Quick Start", body: `
+<p class="lead">Get NovaDNS running and answering real queries in a few minutes.</p>
+<h3>1. Install and run</h3>
+<pre><code>pip install -r requirements.txt
+sudo python3 run.py</code></pre>
+<p>Port 53 needs elevated privileges on Linux/macOS because it's a privileged port below 1024. Running with <code>sudo</code> is the quickest way to try it; see <b>Installation &amp; Deployment</b> for a way to avoid running the whole process as root in production.</p>
+<h3>2. Complete the setup wizard</h3>
+<p>Open the admin UI (default <code>http://localhost:8080</code>) and you'll be walked through:</p>
+<ul>
+  <li><b>System checks</b> — confirms Python version, write access, and port availability.</li>
+  <li><b>Network detection</b> — shows every local IP the server can bind to.</li>
+  <li><b>Administrator account</b> — the login you'll use going forward.</li>
+  <li><b>DNS configuration</b> — optionally create your first zone right away.</li>
+  <li><b>Upstream selection</b> — which public resolver (Cloudflare, Google, Quad9, or custom) handles domains outside your own zones.</li>
+  <li><b>Security</b> — DNSSEC default, HTTPS preference, session timeout.</li>
+  <li><b>Family Safe DNS</b> — optionally turn on category filtering immediately.</li>
+  <li><b>Database &amp; plugins</b> — informational; SQLite is used automatically.</li>
+</ul>
+<div class="callout callout-tip"><span class="callout-icon">{{ icon('check') }}</span><div>A default upstream (Cloudflare) is seeded automatically even before you finish the wizard, so internet domains resolve immediately.</div></div>
+<h3>3. Point a device at it</h3>
+<p>Go to <b>Device Setup Center</b> for copy-paste instructions per platform, or set it once in your router's DHCP settings so every device on the network picks it up automatically — see <b>Troubleshooting</b> if devices aren't resolving.</p>
+` },
+
+deployment: { title: "Installation & Deployment", body: `
+<p class="lead">Three ways to run NovaDNS for real, ordered from quickest to most production-ready.</p>
+<h3>Option A — direct with a capability grant</h3>
+<p>Instead of running the whole process as root, grant just the one capability Python needs to bind port 53:</p>
+<pre><code>sudo setcap 'cap_net_bind_service=+ep' $(which python3)
+python3 run.py</code></pre>
+<h3>Option B — systemd service (recommended for always-on use)</h3>
+<pre><code>sudo cp deploy/novadns.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now novadns</code></pre>
+<p>The bundled unit file uses <code>AmbientCapabilities=CAP_NET_BIND_SERVICE</code> so it binds port 53 without running as root, and restarts automatically on failure.</p>
+<h3>Option C — Docker</h3>
+<pre><code>docker compose up -d</code></pre>
+<p>Maps UDP/TCP 53 and the admin UI port from the container. Data, backups, and logs are stored in named volumes so they survive container recreation.</p>
+<h4>Environment variables</h4>
+<table><thead><tr><th>Variable</th><th>Default</th><th>Purpose</th></tr></thead><tbody>
+<tr><td class="mono">NOVADNS_DB</td><td class="mono">./data/novadns.sqlite</td><td>Database path</td></tr>
+<tr><td class="mono">NOVADNS_SECRET</td><td>random per run</td><td>Session secret — set a fixed value in production</td></tr>
+<tr><td class="mono">NOVADNS_BIND</td><td class="mono">0.0.0.0</td><td>DNS server bind address</td></tr>
+<tr><td class="mono">NOVADNS_DNS_PORT</td><td class="mono">53</td><td>DNS listener port</td></tr>
+<tr><td class="mono">NOVADNS_WEB_PORT</td><td class="mono">8080</td><td>Admin UI port</td></tr>
+</tbody></table>
+<div class="callout callout-warning"><span class="callout-icon">{{ icon('alert-triangle') }}</span><div>Environment variables always override anything saved from Settings → Network, specifically so a production deployment stays pinned to known values regardless of what's in the database.</div></div>
+<h3>HTTPS for the admin UI</h3>
+<p>Generate a self-signed certificate from Settings for LAN/testing use, or put NovaDNS behind a reverse proxy (Caddy/nginx) for a publicly-trusted certificate — see the <b>Security</b> section for details.</p>
+` },
+
+architecture: { title: "Architecture Overview", body: `
+<p class="lead">Everything runs in a single Python process — no separate services to coordinate.</p>
+<p>The Flask app factory starts three background services alongside the web server:</p>
+<ul>
+  <li>The <b>DNS server</b> — its own UDP listener thread and TCP listener thread, spawning a worker thread per request.</li>
+  <li>The <b>alert monitor</b> — polls forwarder health, resource usage, and backup staleness every 30 seconds.</li>
+  <li>The <b>blocklist updater</b> — refreshes subscribed blocklists from their source URL every 24 hours.</li>
+</ul>
+<h3>The resolution pipeline</h3>
+<p>Every query flows through a fixed sequence: <b>maintenance check → access control → blocklists → rewrite engine → cache → Split DNS-aware authoritative lookup → forwarding → response</b>. Open Diagnostics → Live Query Trace to watch this happen stage-by-stage for a real query, with timing at each step.</p>
+<h3>Storage</h3>
+<p>A single SQLite file with WAL (write-ahead log) mode enabled, accessed through a thread-local connection pool — one connection per database path per thread — so the DNS server's own threads never block on the web UI's request-scoped connections, even under concurrent load from many devices.</p>
+<h3>The wire protocol layer</h3>
+<p>NovaDNS implements DNS message parsing and encoding itself (<code>dnscore/wire.py</code>) rather than depending on a third-party DNS library — every byte of every response is built by this codebase. See <b>RFC Compliance &amp; Testing</b> for how this is verified.</p>
+<div class="callout callout-tip"><span class="callout-icon">{{ icon('layers') }}</span><div>For interactive diagrams of the pipeline, cache flow, DNSSEC signing process, thread model, and database layout, see <b>Architecture Explorer</b> in the sidebar.</div></div>
+` },
+
+zones: { title: "Zones & Records", body: `
+<p class="lead">A zone is a domain (or subdomain) NovaDNS answers authoritatively for.</p>
+<h3>Creating a zone</h3>
+<ul>
+  <li><b>Simple DNS Mode</b> — enter a domain and an IP; NovaDNS creates the zone, SOA, NS, and both apex and <code>www</code> A records automatically. Fastest path for a typical "point this name at that server" setup.</li>
+  <li><b>Advanced zone</b> — full control, optionally starting from a template (basic web hosting, web + mail with SPF, or an internal-only service scoped to a client network).</li>
+  <li><b>Reverse DNS zone</b> — enter a network (e.g. <code>10.0.0.0/24</code>) and the correct <code>in-addr.arpa</code>/<code>ip6.arpa</code> zone name is computed automatically.</li>
+</ul>
+<h3>Supported record types</h3>
+<p>A, AAAA, CNAME, MX, TXT, NS, SOA, PTR, SRV, CAA, NAPTR, TLSA, SSHFP, DS, and HTTPS/SVCB (with full SvcParam support: alpn, port, ipv4hint, ipv6hint) — all structured, field-based encoding, not raw hex you have to assemble by hand.</p>
+<h3>Wildcards</h3>
+<p>A record for name <code>*</code> answers any name that doesn't otherwise exist in the zone. It never overrides a name that has its own explicit record — if <code>www</code> has its own A record, a wildcard never applies to queries for <code>www</code>, only to names with no record of their own.</p>
+<h3>Bulk operations</h3>
+<p>Select multiple records in a zone to bulk-delete or bulk-set their TTL in one action, instead of editing records one at a time.</p>
+<h3>Import / export</h3>
+<p>Every zone can be exported as a BIND zone file, JSON, CSV, or YAML, and records can be imported back from JSON, CSV, or YAML — useful for migrating between servers or keeping a version-controlled copy.</p>
+<h3>Zone Verification Center</h3>
+<p>The "Validate" button on a zone runs real checks: circular CNAME chains, apex CNAME conflicts (a CNAME can't coexist with other record types at the same name), MX/SRV targets that don't resolve or point at a CNAME, duplicate records, out-of-range TTLs, missing glue for in-zone delegations, SOA timer sanity, DNSSEC consistency, and empty zones — each flagged with a severity from critical to informational.</p>
+` },
+
+simplemode: { title: "Simple DNS Mode & Templates", body: `
+<p class="lead">Two ways to skip building a zone record-by-record.</p>
+<h3>Simple DNS Mode</h3>
+<p>Enter a domain name and an IP address. NovaDNS creates:</p>
+<ul>
+  <li>The zone itself, with an auto-generated SOA and NS record</li>
+  <li>An A (or AAAA, if you enter an IPv6 address) record at the apex</li>
+  <li>The same record at <code>www</code></li>
+</ul>
+<p>This is the fastest path for the common case of "point this domain at this server."</p>
+<h3>Zone templates</h3>
+<p>When creating an advanced zone, choose a starting template instead of an empty zone:</p>
+<ul>
+  <li><b>Blank</b> — just the NS record, build everything yourself.</li>
+  <li><b>Basic web hosting</b> — A records at the apex and <code>www</code>.</li>
+  <li><b>Web + mail</b> — adds an MX record, a TXT SPF record, and an A record for <code>mail</code>.</li>
+  <li><b>Internal-only service</b> — an apex A record scoped to a client network or group, so it only answers for clients on your internal network (see <b>Split DNS</b>).</li>
+</ul>
+` },
+
+splitdns: { title: "Split DNS & Client Groups", body: `
+<p class="lead">Answer the same name differently depending on who's asking.</p>
+<h3>Split DNS</h3>
+<p>Any record can carry an optional <b>client match</b> — a CIDR, a single IP, or a named group. When two records share the same name and type, the client-scoped one wins for matching clients; everyone else falls back to the unscoped record. Example: <code>internal.example.com</code> resolves to a private LAN IP for your office network, and a public IP for everyone else — same name, same zone, two records.</p>
+<h3>Client Groups</h3>
+<p>Instead of repeating raw CIDRs everywhere, name a set of them once (e.g. <code>staff</code>, <code>kids</code>, <code>iot</code>) under Client Groups, then reference it as <code>group:name</code> anywhere a client match is accepted — Split DNS records, rewrite rules, and filtering entries all understand it.</p>
+<div class="callout callout-tip"><span class="callout-icon">{{ icon('check') }}</span><div>A record with no client match always answers everyone — Split DNS is opt-in per record, not a mode you switch a whole zone into.</div></div>
+` },
+
+reversedns: { title: "Reverse DNS", body: `
+<p class="lead">Answering "what hostname is this IP" instead of "what IP is this hostname."</p>
+<h3>Creating a reverse zone</h3>
+<p>Go to Zones → Reverse DNS zone, enter a network (e.g. <code>10.0.0.0/24</code>), and NovaDNS computes the conventional <code>in-addr.arpa</code> zone name automatically — no need to reverse the octets by hand. IPv4 <code>/8</code>, <code>/16</code>, and <code>/24</code> networks are supported, along with nibble-aligned IPv6 prefixes for <code>ip6.arpa</code>.</p>
+<h3>Adding PTR records</h3>
+<p>A reverse zone's page shows a convenience form: enter just the host number (the last octet, or the last nibble group for IPv6) and the target hostname, instead of hand-building the reversed owner name.</p>
+` },
+
+forwarding: { title: "DNS Forwarding", body: `
+<p class="lead">What happens when a query doesn't match one of your own zones.</p>
+<h3>Upstreams</h3>
+<p>Configure one or more upstream servers under Forwarding. Each has a priority (lower answers first), and NovaDNS automatically fails over to the next healthy one — health and latency are tracked per forwarder and shown live.</p>
+<h3>Transports</h3>
+<p>UDP and TCP are always available. DNS-over-TLS (RFC 7858) and DNS-over-HTTPS (RFC 8484) are both fully implemented, not just configured-but-unused — DoT wraps a standard length-prefixed TCP query in TLS on port 853 by default; DoH POSTs the wire-format message per the spec.</p>
+<h3>Conditional forwarding</h3>
+<p>A forwarder can be scoped to a specific domain suffix instead of being a global default — useful for routing internal-only subdomains to a different resolver than the rest of the internet.</p>
+` },
+
+caching: { title: "Caching", body: `
+<p class="lead">Answers are cached in memory, keyed by name, type, and whether DNSSEC was requested.</p>
+<h3>TTL behavior</h3>
+<p>The cache TTL comes from the lowest TTL among the returned records, or the zone's configured negative-TTL for NXDOMAIN responses. Eviction under memory pressure is a simple oldest-5% sweep rather than full LRU bookkeeping, keeping the hot path cheap.</p>
+<h3>The AA bit and cache origin</h3>
+<p>Each cache entry remembers whether the underlying answer was authoritative (from your own zone) or forwarded. A cache <i>hit</i> for authoritative data still reports the DNS header's AA bit correctly — caching is purely a performance layer, it never changes what a response claims to be.</p>
+<h3>Inspecting and clearing the cache</h3>
+<p>Monitoring → Cache lets you inspect current entries or clear the cache manually; it's also cleared automatically whenever a zone, forwarder, filter, or rewrite rule changes.</p>
+` },
+
+dnssec: { title: "DNSSEC", body: `
+<p class="lead">Real zone signing — genuine cryptography, not a checkbox that does nothing.</p>
+<h3>Signing a zone</h3>
+<p>From a zone's page, click <b>Enable &amp; sign zone</b>. This generates an ECDSAP256SHA256 (RFC 6605) key pair, publishes a real DNSKEY record, and produces RFC 4034-canonical RRSIGs for every RRset.</p>
+<h3>Denial of existence</h3>
+<p>Signed zones include either NSEC (RFC 4034, plain canonical-order chain) or NSEC3 (RFC 5155, hashed and zone-walk-resistant) records, so a validating resolver gets a real cryptographic proof that a name doesn't exist — not just a bare NXDOMAIN with nothing backing it up. Choose which scheme a zone uses from its DNSSEC panel.</p>
+<h3>Completing the chain of trust</h3>
+<p>The zone's DNSSEC panel shows its <b>DS record</b> — copy this into your parent zone or domain registrar to complete the chain of trust up to the root.</p>
+<h3>Keeping signatures current</h3>
+<p>Editing or deleting a record on an already-signed zone triggers an automatic full re-sign, so signatures never silently go stale after a change.</p>
+<div class="callout callout-warning"><span class="callout-icon">{{ icon('alert-triangle') }}</span><div><b>Not implemented:</b> automated key rollover (re-signing reuses the same key rather than rotating on a schedule).</div></div>
+` },
+
+filtering: { title: "Filtering & Ad-Blocking", body: `
+<p class="lead">Category-based content filtering backed by real domain lists, not placeholders.</p>
+<h3>Two kinds of category</h3>
+<p>Brand-name categories — ads &amp; tracking, adult, gambling, social media, gaming, streaming, torrents, VPN/proxy, dating, drugs, cryptocurrency — ship with a curated list of real, well-known domains that blocks immediately, fully offline, the moment you enable the category.</p>
+<p>Security-critical categories — malware, phishing, scam, ransomware, botnet — instead subscribe to real, actively-maintained public threat-intel feeds. A static list of "known malicious domains" goes stale within days; these categories need live internet access to sync, exactly like any real security product.</p>
+<h3>Custom lists</h3>
+<p>Add your own blocklist by URL (hosts-format or plain domain list, synced automatically every 24 hours or on demand), or import one from a local file for fully offline use. Custom block and allow entries support exact domains, wildcards, and regex, optionally scoped to a client group.</p>
+<h3>Checking what's actually blocked</h3>
+<p>Click the search icon next to any enabled category to see the real domains currently loaded for it. The Filtering page also shows a live count of queries blocked today and the top blocked domains.</p>
+` },
+
+"access-control": { title: "Access Control & Rate Limiting", body: `
+<p class="lead">Protecting the server itself, not just the content it serves.</p>
+<h3>Query ACL</h3>
+<p>Settings → Network &amp; Security lets you restrict which client networks may query the server at all. An empty list allows everyone (the default, matching how most home/office DNS servers behave); a configured list refuses everyone else.</p>
+<h3>Rate limiting</h3>
+<p>A per-client token bucket protects against query floods — configurable sustained queries/sec and burst capacity, applied live without a restart. Set queries/sec to 0 to disable it entirely.</p>
+<h3>Zone transfer (AXFR) access</h3>
+<p>Refused for everyone by default — unlike the general query ACL, this defaults closed. Add trusted secondary DNS server IPs explicitly under Settings → Network &amp; Security before a secondary can transfer a zone.</p>
+` },
+
+dyndns: { title: "Dynamic DNS", body: `
+<p class="lead">Keep an A record pointed at a device whose IP address changes.</p>
+<h3>Registering a host</h3>
+<p>Settings → Dynamic DNS → register a hostname. You'll get a one-time token and an update URL:</p>
+<pre><code>GET /api/v1/dyndns/update?hostname=home.example.com&token=...&ip=&lt;your-ip&gt;</code></pre>
+<h3>Using it</h3>
+<p>Hit that URL from whatever script or device tracks the changing IP (a router, a cron job on the device itself). Omit <code>ip=</code> to have NovaDNS use the request's own source address automatically. The matching A record updates and the cache clears immediately.</p>
+` },
+
+monitoring: { title: "Monitoring & Diagnostics", body: `
+<p class="lead">Real-time visibility into what the resolver is actually doing.</p>
+<h3>Live metrics</h3>
+<p>Queries per minute, real p50/p90/p95/p99 latency percentiles over a selectable window (hour/day/week/month/year), peak queries-per-minute, the single slowest query in the window, cache hit ratio, and security counters — rate-limited clients, ACL refusals, blocklist hits, failed logins.</p>
+<h3>Live Query Trace</h3>
+<p>The Diagnostics lookup tool shows every pipeline stage a query actually passed through — ACL, blocklists, rewrite engine, cache, Split DNS/authoritative lookup, forwarder, DNSSEC — with the real decision and timing at each step, not a simplified summary.</p>
+<h3>DNS Packet Inspector</h3>
+<p>Paste or generate a hex-encoded DNS message and see it parsed with NovaDNS's own wire-format decoder: header flags, questions, answer/authority/additional sections — with side-by-side comparison of two packets.</p>
+<h3>Built-in benchmark</h3>
+<p>Fires real queries through the live resolver at a configurable count and concurrency, reporting QPS and p95/p99 latency with history and plain-language recommendations.</p>
+` },
+
+backup: { title: "Backup & Restore", body: `
+<p class="lead">The whole database — zones, settings, everything — in one file.</p>
+<h3>Creating a backup</h3>
+<p>Settings → Backups → Create backup now. Optionally set a password for real AES encryption (PBKDF2 + Fernet), not just a filename convention.</p>
+<h3>Restoring</h3>
+<p>Every backup includes a SHA-256 checksum verified on restore, so a corrupted or truncated backup file is caught before it overwrites your live database rather than silently loading bad data.</p>
+` },
+
+importexport: { title: "Import / Export", body: `
+<p class="lead">Moving zone data in and out of NovaDNS.</p>
+<h3>Export formats</h3>
+<p>Any zone can be exported as a standard BIND zone file, JSON, CSV, or YAML from its detail page.</p>
+<h3>Import</h3>
+<p>Records can be imported from JSON, CSV, or YAML files matching the exported shape (name, rtype, ttl, data, client_match) — useful for migrating from another instance or restoring a specific zone without a full database restore.</p>
+` },
+
+testing: { title: "RFC Compliance & Testing", body: `
+<p class="lead">Every compliance claim is backed by a test that actually runs.</p>
+<h3>The RFC Compliance Center</h3>
+<p>Runs a real test suite live from the UI — the exact same tests in <code>tests/test_rfc_compliance.py</code> that ship with the source. Every number shown (pass/fail counts, compliance percentage) comes from executing genuine assertions against NovaDNS's own wire-format encoder/decoder, resolver, DNSSEC signer, AXFR implementation, and transport layers at that moment — not a static claim baked into the page.</p>
+<h3>What's covered</h3>
+<p>Message format and compression (RFC 1035), zone/CNAME concepts (RFC 1034), negative caching (RFC 2308), DNSSEC records and ECDSA signing (RFC 4034/4035/6605), zone transfer (RFC 5936), EDNS0 (RFC 6891), DNS-over-TLS (RFC 7858), DNS-over-HTTPS (RFC 8484), TLSA (RFC 6698), SSHFP (RFC 4255), HTTPS/SVCB (RFC 9460), and NAPTR (RFC 2915).</p>
+<h3>What's honestly not implemented</h3>
+<p>NSEC3 hashed denial-of-existence, DNS-over-QUIC (no pure-stdlib implementation exists), and ACME auto-TLS are listed on the same page with the actual reason, rather than silently omitted.</p>
+<h3>Running it yourself</h3>
+<pre><code>python3 -m unittest tests.test_rfc_compliance -v</code></pre>
+` },
+
+api: { title: "API Reference", body: `
+<p class="lead">Everything the admin UI can do, a script can do too.</p>
+<h3>Public JSON endpoints</h3>
+<table><thead><tr><th>Endpoint</th><th>Auth</th><th>Purpose</th></tr></thead><tbody>
+<tr><td class="mono">GET /api/v1/zones</td><td>session</td><td>List zones</td></tr>
+<tr><td class="mono">GET /api/v1/zones/&lt;id&gt;/records</td><td>session</td><td>List a zone's records</td></tr>
+<tr><td class="mono">GET /api/v1/dyndns/update</td><td>token</td><td>Dynamic DNS update</td></tr>
+</tbody></table>
+<h3>Everything else</h3>
+<p>Administrative actions — zones, records, forwarders, rewrite rules, filtering, settings — are exposed as JSON endpoints under their respective blueprints (<code>/zones/...</code>, <code>/forwarders/...</code>, etc.). The admin UI itself is just a client of these same endpoints, authenticated with a session cookie, so anything the UI can do a script can do with the same cookie.</p>
+` },
+
+troubleshooting: { title: "Troubleshooting", body: `
+<h3>Devices can't resolve anything</h3>
+<p>Almost always port 53. Phones, routers, and PCs have no setting for a custom DNS port — the listener has to actually be on port 53. Check the red banner at the top of any admin page if binding failed; it's usually a permissions issue (see <b>Installation &amp; Deployment</b> for the capability-grant / systemd approach).</p>
+<h3>Public domains don't resolve</h3>
+<p>Check Forwarding — you need at least one enabled upstream. A fresh install seeds Cloudflare automatically, but if forwarders were removed, add one back.</p>
+<h3>Firewall</h3>
+<p>The host OS firewall must allow inbound UDP/TCP 53 from your LAN. Exact commands for Linux (ufw/firewalld), Windows, and macOS are on the Device Setup Center page.</p>
+<h3>Zone transfer (AXFR) failing</h3>
+<p>Refused by default for everyone — add the secondary's IP under Settings → Network &amp; Security → AXFR allow-list.</p>
+<h3>A record type shows unexpected results in nslookup/dig</h3>
+<p>If you're on a very old build, this was a real wire-protocol bug (an unrecognized query type could corrupt the echoed question section) that's since been fixed and covered by a permanent regression test — make sure you're on the current version.</p>
+` },
+
+faq: { title: "FAQ", body: `
+<h3>Does this need internet access to work?</h3>
+<p>No — local zones, caching, filtering, and rewrite rules all work fully offline. Forwarding to the public internet, scheduled blocklist updates, notification delivery, and RDAP registrar lookups all need outbound network access.</p>
+<h3>Can I run this in production?</h3>
+<p>Yes — with the systemd unit or Docker setup included in the repo, behind a reverse proxy for a publicly-trusted TLS certificate on the admin UI (or the built-in self-signed HTTPS for LAN-only access).</p>
+<h3>What's genuinely not built yet?</h3>
+<p>DNS-over-QUIC, ACME auto-TLS, NSEC3 hashed denial-of-existence... wait, NSEC3 is actually implemented — see <b>DNSSEC</b>. The honest current gaps are DoQ, ACME, and a drag-and-drop visual rule editor (the rule builder is a full form-based UI with simulation, just not a graphical canvas).</p>
+` },
+
+};
+
+function renderToc(filter){
+  const f = (filter||'').toLowerCase();
+  const toc = document.getElementById('docs-toc');
+  let html = '';
+  for(const group of GROUPS){
+    const matches = group.items.filter(id => {
+      if(!f) return true;
+      const s = SECTIONS[id];
+      return s.title.toLowerCase().includes(f) || s.body.toLowerCase().includes(f);
+    });
+    if(!matches.length) continue;
+    html += `<div class="doc-toc-group">${group.name}</div>`;
+    html += matches.map(id => `<a class="nav-link" href="#${id}" onclick="showSection('${id}');return false;">${SECTIONS[id].title}</a>`).join('');
+  }
+  toc.innerHTML = html || '<div style="color:var(--text-faint); font-size:12.5px; padding:8px;">No matches</div>';
+}
+function showSection(id){
+  const s = SECTIONS[id] || SECTIONS.quickstart;
+  document.getElementById('docs-content').innerHTML = `<div class="doc-body card card-pad page-enter"><h2>${s.title}</h2>${s.body}</div>`;
+  document.querySelectorAll('#docs-toc .nav-link').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#'+id));
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+document.getElementById('docs-search').addEventListener('input', e => renderToc(e.target.value));
+renderToc();
+showSection(new URLSearchParams(location.search).get('s') || 'quickstart');
+</script>
+{% endblock %}

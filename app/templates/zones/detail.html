@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% block page_title %}Zone · {{ zone.name }}{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:18px;">
+  <div>
+    <div class="eyebrow">Authoritative zone</div>
+    <h2 class="mono" style="margin-top:4px;">{{ zone.name }}</h2>
+  </div>
+  <div style="display:flex; gap:10px;">
+    <button class="btn btn-outline" onclick="validateZone()">{{ icon('shield') }} Validate</button>
+    <div style="position:relative;">
+      <details style="position:static;">
+        <summary class="btn btn-outline" style="list-style:none; cursor:pointer;">{{ icon('download') }} Export</summary>
+        <div style="position:absolute; right:0; top:40px; background:var(--surface-raised); border:1px solid var(--border-strong); border-radius:8px; padding:4px; width:140px; box-shadow:var(--shadow-card); z-index:50;">
+          <a class="nav-link" style="padding:7px 10px;" href="{{ url_for('zones.export_zone', zone_id=zone.id) }}">BIND zone file</a>
+          <a class="nav-link" style="padding:7px 10px;" href="{{ url_for('zones.export_json', zone_id=zone.id) }}">JSON</a>
+          <a class="nav-link" style="padding:7px 10px;" href="{{ url_for('zones.export_csv', zone_id=zone.id) }}">CSV</a>
+          <a class="nav-link" style="padding:7px 10px;" href="{{ url_for('zones.export_yaml', zone_id=zone.id) }}">YAML</a>
+        </div>
+      </details>
+    </div>
+    <button class="btn btn-outline" onclick="Nova.openModal('import-modal')">{{ icon('upload') }} Import</button>
+    <button class="btn btn-primary" onclick="Nova.openModal('add-record-modal')">{{ icon('plus') }} Add record</button>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="import-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Import records</h3><button class="icon-btn" style="margin-left:auto;" data-close-modal="import-modal">{{ icon('x') }}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>File (.json, .csv, or .yaml)</label><input type="file" id="import-file" accept=".json,.csv,.yaml,.yml"></div>
+      <div class="help">CSV/JSON/YAML exported from another NovaDNS zone import cleanly. Matching format expected: name, rtype, ttl, data, client_match.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal="import-modal">Cancel</button>
+      <button class="btn btn-primary" onclick="submitImport()">Import</button>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-4" style="margin-bottom:18px;">
+  <div class="card stat-card"><div class="label">SOA serial</div><div class="value" style="font-size:20px;">{{ zone.soa_serial }}</div></div>
+  <div class="card stat-card"><div class="label">Default TTL</div><div class="value" style="font-size:20px;">{{ zone.default_ttl }}s</div></div>
+  <div class="card stat-card"><div class="label">Records</div><div class="value" style="font-size:20px;">{{ records|length }}</div></div>
+  <div class="card stat-card"><div class="label">DNSSEC</div><div class="value" style="font-size:20px;">{{ 'On' if zone.dnssec_enabled else 'Off' }}</div></div>
+</div>
+
+<div class="card" style="margin-bottom:18px;">
+  <div class="card-head" style="justify-content:space-between;"><h3>{{ icon('server') }} &nbsp;SOA record</h3>
+    <button class="btn btn-sm btn-outline" onclick="Nova.openModal('soa-modal')">Edit</button>
+  </div>
+  <div class="card-pad mono" style="font-size:13px; line-height:1.9;">
+    {{ zone.name }}. IN SOA {{ zone.soa_mname }} {{ zone.soa_rname }} ({{ zone.soa_serial }} {{ zone.soa_refresh }} {{ zone.soa_retry }} {{ zone.soa_expire }} {{ zone.soa_minimum }})
+  </div>
+</div>
+
+{% if zone.name.endswith('in-addr.arpa') or zone.name.endswith('ip6.arpa') %}
+<div class="card" style="margin-bottom:18px;">
+  <div class="card-head"><h3>{{ icon('globe') }} &nbsp;Add PTR record</h3><span class="sub">reverse DNS zone</span></div>
+  <div class="card-pad" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+    <div class="field" style="margin:0;"><label>Host number (last octet / nibble group)</label><input class="mono" id="ptr-host" placeholder="5" style="width:140px;"></div>
+    <div class="field" style="margin:0; flex:1;"><label>Target hostname</label><input class="mono" id="ptr-target" placeholder="host5.corp.lan"></div>
+    <button class="btn btn-primary" onclick="addPtr()">{{ icon('plus') }} Add PTR</button>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:18px;">
+  <div class="card-head" style="justify-content:space-between;"><h3>{{ icon('lock') }} &nbsp;DNSSEC</h3>
+    <button class="btn btn-sm btn-primary" onclick="signZone()">{{ 'Re-sign zone' if zone.dnssec_enabled else 'Enable & sign zone' }}</button>
+  </div>
+  <div class="card-pad" id="dnssec-panel">Loading…</div>
+</div>
+
+<div id="validation-result"></div>
+
+<div class="card">
+  <div class="card-head" style="justify-content:space-between;">
+    <h3>Records</h3>
+    <div id="bulk-toolbar" style="display:none; gap:8px; align-items:center;">
+      <span id="bulk-count" class="badge badge-blue mono"></span>
+      <input class="mono" id="bulk-ttl-input" placeholder="new TTL" style="width:90px;">
+      <button class="btn btn-sm btn-outline" onclick="bulkSetTtl()">Set TTL</button>
+      <button class="btn btn-sm btn-danger" onclick="bulkDelete()">{{ icon('trash') }} Delete selected</button>
+    </div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th style="width:30px;"><input type="checkbox" id="select-all" onchange="toggleAll(this)"></th><th>Name</th><th>Type</th><th>TTL</th><th>Value</th><th>Scope</th><th></th></tr></thead>
+    <tbody>
+      {% for r in records %}
+      <tr>
+        <td><input type="checkbox" class="rec-checkbox" value="{{ r.id }}" onchange="updateBulkToolbar()"></td>
+        <td class="mono">{{ r.name }}</td>
+        <td><span class="badge badge-purple">{{ r.rtype }}</span></td>
+        <td class="mono">{{ r.ttl or zone.default_ttl }}</td>
+        <td class="mono" style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          {{ r.data.values()|map('string')|join(' · ') }}
+        </td>
+        <td>{% if r.client_match %}<span class="badge badge-amber mono">{{ r.client_match }}</span>{% else %}<span class="badge badge-gray">all</span>{% endif %}</td>
+        <td style="text-align:right;"><button class="btn btn-sm btn-danger" onclick="delRecord({{ r.id }})">{{ icon('trash') }}</button></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty-state">No records yet — add one above.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="modal-backdrop" id="soa-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Edit SOA</h3><button class="icon-btn" style="margin-left:auto;" data-close-modal="soa-modal">{{ icon('x') }}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Primary nameserver (MNAME)</label><input class="mono" id="soa-mname" value="{{ zone.soa_mname }}"></div>
+      <div class="field"><label>Admin contact (RNAME)</label><input class="mono" id="soa-rname" value="{{ zone.soa_rname }}"></div>
+      <div class="field-row">
+        <div class="field"><label>Refresh (s)</label><input class="mono" id="soa-refresh" value="{{ zone.soa_refresh }}"></div>
+        <div class="field"><label>Retry (s)</label><input class="mono" id="soa-retry" value="{{ zone.soa_retry }}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Expire (s)</label><input class="mono" id="soa-expire" value="{{ zone.soa_expire }}"></div>
+        <div class="field"><label>Minimum/negative TTL (s)</label><input class="mono" id="soa-minimum" value="{{ zone.soa_minimum }}"></div>
+      </div>
+      <div class="help">Serial ({{ zone.soa_serial }}) increments automatically on every change.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal="soa-modal">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSoa()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="add-record-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Add record</h3><button class="icon-btn" style="margin-left:auto;" data-close-modal="add-record-modal">{{ icon('x') }}</button></div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Name</label>
+        <input class="mono" id="rec-name" placeholder="@ for apex, or 'www'" value="@">
+      </div>
+      <div class="field">
+        <label>Type</label>
+        <select id="rec-type" onchange="renderRecordFields()">
+          {% for t in rtype_fields.keys() %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        </select>
+      </div>
+      <div id="rec-fields"></div>
+      <div class="field">
+        <label>Client match (Split DNS, optional)</label>
+        <input class="mono" id="rec-client-match" placeholder="192.168.1.0/24 or group:kids — leave blank to answer everyone">
+        <div class="help">If another record exists for this same name+type with no client match, this one wins for matching clients and the other stays as the fallback.</div>
+      </div>
+      <div class="field">
+        <label>TTL (blank = zone default)</label>
+        <input class="mono" id="rec-ttl" placeholder="{{ zone.default_ttl }}">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal="add-record-modal">Cancel</button>
+      <button class="btn btn-primary" onclick="submitRecord()">Add record</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const RTYPE_FIELDS = {{ rtype_fields | tojson }};
+const FIELD_LABELS = {address:"IP address", target:"Target host", priority:"Priority", text:"Text value",
+  weight:"Weight", port:"Port", flags:"Flags", tag:"Tag", value:"Value", order:"Order", preference:"Preference",
+  service:"Service", regexp:"Regexp", replacement:"Replacement", raw_hex:"Raw hex data"};
+
+function addPtr(){
+  const body = { host_part: document.getElementById('ptr-host').value, target: document.getElementById('ptr-target').value };
+  Nova.api("{{ url_for('zones.add_ptr_convenience', zone_id=zone.id) }}", {method:"POST", body}).then(()=>location.reload());
+}
+function toggleAll(el){
+  document.querySelectorAll('.rec-checkbox').forEach(cb => cb.checked = el.checked);
+  updateBulkToolbar();
+}
+function selectedIds(){
+  return Array.from(document.querySelectorAll('.rec-checkbox:checked')).map(cb => parseInt(cb.value));
+}
+function updateBulkToolbar(){
+  const ids = selectedIds();
+  const toolbar = document.getElementById('bulk-toolbar');
+  toolbar.style.display = ids.length ? 'flex' : 'none';
+  document.getElementById('bulk-count').textContent = `${ids.length} selected`;
+}
+function bulkDelete(){
+  const ids = selectedIds();
+  if(!ids.length) return;
+  if(!Nova.confirmDanger(`Delete ${ids.length} record(s)? This can't be undone.`)) return;
+  Nova.api("{{ url_for('zones.bulk_delete_records', zone_id=zone.id) }}", {method:"POST", body:{ids}}).then(()=>location.reload());
+}
+function bulkSetTtl(){
+  const ids = selectedIds();
+  const ttl = document.getElementById('bulk-ttl-input').value;
+  if(!ids.length || !ttl) return Nova.toast("Select records and enter a TTL", "error");
+  Nova.api("{{ url_for('zones.bulk_set_ttl', zone_id=zone.id) }}", {method:"POST", body:{ids, ttl}}).then(()=>location.reload());
+}
+function submitImport(){
+  const f = document.getElementById('import-file').files[0];
+  if(!f) return Nova.toast("Choose a file first", "error");
+  const fd = new FormData(); fd.append('file', f);
+  fetch("{{ url_for('zones.import_records', zone_id=zone.id) }}", {method:"POST", body:fd}).then(r=>r.json()).then(d=>{
+    if(d.error) return Nova.toast(d.error, "error");
+    Nova.toast(`Imported ${d.imported} record(s)`); location.reload();
+  });
+}
+function renderRecordFields(){
+  const t = document.getElementById('rec-type').value;
+  const box = document.getElementById('rec-fields');
+  box.innerHTML = (RTYPE_FIELDS[t]||[]).map(f => `
+    <div class="field">
+      <label>${FIELD_LABELS[f]||f}</label>
+      <input class="mono rec-field" data-field="${f}" placeholder="${f}">
+    </div>`).join('');
+}
+document.addEventListener('DOMContentLoaded', renderRecordFields);
+
+function submitRecord(){
+  const body = {
+    name: document.getElementById('rec-name').value || '@',
+    rtype: document.getElementById('rec-type').value,
+    ttl: document.getElementById('rec-ttl').value || null,
+    client_match: document.getElementById('rec-client-match').value || '',
+  };
+  document.querySelectorAll('.rec-field').forEach(inp => body[inp.dataset.field] = inp.value);
+  Nova.api("{{ url_for('zones.add_record', zone_id=zone.id) }}", {method:"POST", body}).then(()=>{
+    Nova.toast("Record added"); location.reload();
+  }).catch(()=>{});
+}
+function delRecord(id){
+  if(!Nova.confirmDanger("Delete this record?")) return;
+  Nova.api(`/zones/records/${id}`, {method:"DELETE"}).then(()=>location.reload());
+}
+function validateZone(){
+  document.getElementById('validation-result').innerHTML = '<div class="card card-pad"><div class="skel skel-row"></div><div class="skel skel-row" style="width:60%"></div></div>';
+  fetch("{{ url_for('zones.validate_zone', zone_id=zone.id) }}").then(r=>r.json()).then(d=>{
+    const box = document.getElementById('validation-result');
+    const badgeClass = {critical:'badge-red', high:'badge-red', medium:'badge-amber', low:'badge-blue', info:'badge-gray', ok:'badge-green'};
+    const summary = Object.entries(d.counts || {}).map(([lvl,n]) => `<span class="badge ${badgeClass[lvl]}">${n} ${lvl}</span>`).join(' ');
+    box.innerHTML = `<div class="card card-pad" style="margin-bottom:18px;">
+      <div style="margin-bottom:10px;">${summary}</div>` + d.issues.map(i => {
+      const cls = badgeClass[i.level] || 'badge-gray';
+      return `<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px;"><span class="badge ${cls}" style="flex-shrink:0;">${i.level}</span><span>${i.message}</span></div>`;
+    }).join('') + `</div>`;
+  });
+}
+function saveSoa(){
+  const body = {
+    mname: document.getElementById('soa-mname').value, rname: document.getElementById('soa-rname').value,
+    refresh: document.getElementById('soa-refresh').value, retry: document.getElementById('soa-retry').value,
+    expire: document.getElementById('soa-expire').value, minimum: document.getElementById('soa-minimum').value,
+  };
+  Nova.api("{{ url_for('zones.update_soa', zone_id=zone.id) }}", {method:"POST", body}).then(()=>location.reload());
+}
+function loadDnssec(){
+  fetch("{{ url_for('zones.dnssec_status', zone_id=zone.id) }}").then(r=>r.json()).then(d=>{
+    const box = document.getElementById('dnssec-panel');
+    if(!d.signed){
+      box.innerHTML = `<p style="color:var(--text-muted); margin:0;">Not signed yet. Signing generates a real ECDSAP256SHA256 key pair and RFC 4034-compliant RRSIGs for every record in this zone.</p>`;
+      return;
+    }
+    box.innerHTML = `
+      <div class="field-row" style="margin-bottom:12px;">
+        <div><label>Algorithm</label><div class="mono">ECDSAP256SHA256 (13)</div></div>
+        <div><label>Key tag</label><div class="mono">${d.key_tag}</div></div>
+      </div>
+      <label>DS record — add this to your parent zone / registrar to complete the chain of trust</label>
+      <div class="copybox"><span style="overflow-x:auto;">${d.ds_record_text}</span><button class="btn btn-sm btn-ghost" data-copy="${d.ds_record_text}">{{ icon('copy') }}</button></div>
+      <div class="help" style="margin-top:8px;">${d.rrsig_count} RRset(s) currently signed.</div>`;
+  });
+}
+function signZone(){
+  Nova.toast("Signing zone…");
+  Nova.api("{{ url_for('zones.dnssec_sign', zone_id=zone.id) }}", {method:"POST"}).then(d=>{
+    Nova.toast(`Signed ${d.rrsets_signed} RRset(s)`); location.reload();
+  });
+}
+loadDnssec();
+</script>
+{% endblock %}

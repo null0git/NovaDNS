@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block page_title %}Monitoring{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+  <h3 style="margin:0;">Advanced performance</h3>
+  <select id="range-select" onchange="loadPercentiles()" style="width:140px;">
+    <option value="hour">Last hour</option>
+    <option value="day">Last day</option>
+    <option value="week">Last week</option>
+    <option value="month">Last month</option>
+    <option value="year">Last year</option>
+  </select>
+</div>
+<div class="grid grid-4" style="margin-bottom:20px;">
+  <div class="card stat-card"><div class="label">p50 latency</div><div class="value" id="p50" style="font-size:20px;">—</div></div>
+  <div class="card stat-card"><div class="label">p90 latency</div><div class="value" id="p90" style="font-size:20px;">—</div></div>
+  <div class="card stat-card"><div class="label">p95 / p99 latency</div><div class="value" id="p95p99" style="font-size:16px;">—</div></div>
+  <div class="card stat-card"><div class="label">Peak QPM</div><div class="value" id="peak-qps" style="font-size:20px;">—</div></div>
+</div>
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-pad" id="slowest-query" style="font-size:13px; color:var(--text-muted);">Loading…</div>
+</div>
+
+<div class="grid grid-4" style="margin-bottom:20px;">
+  <div class="card stat-card"><div class="label">Rate-limited (live)</div><div class="value" id="sec-rl" style="font-size:20px;">—</div></div>
+  <div class="card stat-card"><div class="label">ACL refused (live)</div><div class="value" id="sec-acl" style="font-size:20px;">—</div></div>
+  <div class="card stat-card"><div class="label">Blocklist hits (24h)</div><div class="value" id="sec-blocked" style="font-size:20px;">—</div></div>
+  <div class="card stat-card"><div class="label">Failed logins (24h)</div><div class="value" id="sec-failedlogin" style="font-size:20px;">—</div></div>
+</div>
+
+<div class="grid grid-3" style="margin-bottom:20px;">
+  <div class="card card-pad">
+    <h3 style="margin-bottom:10px;">Queries / min</h3>
+    <canvas id="qps-chart" style="width:100%; height:130px;"></canvas>
+  </div>
+  <div class="card card-pad">
+    <h3 style="margin-bottom:10px;">Avg latency (ms)</h3>
+    <canvas id="latency-chart" style="width:100%; height:130px;"></canvas>
+  </div>
+  <div class="card card-pad" style="display:flex; gap:16px; align-items:center;">
+    <canvas id="source-donut" width="110" height="110" style="width:110px;height:110px;flex-shrink:0;"></canvas>
+    <div id="source-legend" style="font-size:12.5px; display:flex; flex-direction:column; gap:6px;"></div>
+  </div>
+</div>
+
+<div class="grid grid-4" style="margin-bottom:20px;">
+  <div class="card stat-card"><div class="label">CPU</div><div class="value" id="m-cpu">—</div></div>
+  <div class="card stat-card"><div class="label">Memory</div><div class="value" id="m-mem">—</div></div>
+  <div class="card stat-card"><div class="label">Disk</div><div class="value" id="m-disk">—</div></div>
+  <div class="card stat-card"><div class="label">Cache entries</div><div class="value" id="m-cache">—</div></div>
+</div>
+
+<div class="grid grid-4" style="margin-bottom:20px;">
+  <div class="card stat-card"><div class="label">Total queries (since start)</div><div class="value" id="m-total" style="font-size:20px;">—</div></div>
+  <div class="card stat-card"><div class="label">Rejected (ACL)</div><div class="value" id="m-acl" style="font-size:20px;">—</div></div>
+  <div class="card stat-card"><div class="label">Rate-limited</div><div class="value" id="m-rl" style="font-size:20px;">—</div></div>
+  <div class="card stat-card"><div class="label">Resolver errors</div><div class="value" id="m-err" style="font-size:20px;">—</div></div>
+</div>
+
+<div class="grid grid-2" style="margin-bottom:20px;">
+  <div class="card">
+    <div class="card-head" style="justify-content:space-between;"><h3>Upstream health</h3></div>
+    <div class="table-wrap"><table>
+      <tbody>
+        {% for f in forwarders %}
+        <tr><td class="mono">{{ f.address }}</td><td>{% if f.healthy %}<span class="badge badge-green">healthy</span>{% else %}<span class="badge badge-red">unhealthy</span>{% endif %}</td>
+        <td class="mono">{{ (f.last_latency_ms|round(1)) if f.last_latency_ms else '—' }}</td></tr>
+        {% else %}
+        <tr><td class="empty-state" colspan="3">No forwarders configured.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-head" style="justify-content:space-between;"><h3>Cache</h3>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-sm btn-outline" onclick="inspectCache()">Inspect</button>
+        <button class="btn btn-sm btn-danger" onclick="clearCache()">Clear</button>
+      </div>
+    </div>
+    <div class="card-pad" id="cache-inspect" style="font-family:var(--font-mono); font-size:12.5px; color:var(--text-muted); max-height:220px; overflow:auto;">
+      Click "Inspect" to view current cache entries.
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h3>Live query monitor</h3><span class="badge badge-blue mono" style="margin-left:auto;">streaming</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Time</th><th>Name</th><th>Type</th><th>Source</th><th>RCODE</th><th>Latency</th></tr></thead>
+    <tbody id="live-rows"></tbody>
+  </table></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+const SOURCE_COLORS = {cache:"#4C8CFF", authoritative:"#34D399", forward:"#A78BFA", blocked:"#F0506E", rewritten:"#F5A524", maintenance:"#5B6478"};
+
+function loadPercentiles(){
+  const window = document.getElementById('range-select').value;
+  fetch(`{{ url_for('monitoring.api_percentiles') }}?window=${window}`).then(r=>r.json()).then(d=>{
+    document.getElementById('p50').textContent = d.p50 + 'ms';
+    document.getElementById('p90').textContent = d.p90 + 'ms';
+    document.getElementById('p95p99').textContent = `${d.p95}ms / ${d.p99}ms`;
+    document.getElementById('peak-qps').textContent = d.peak_qps_per_min;
+    const sq = d.slowest_query;
+    document.getElementById('slowest-query').innerHTML = sq
+      ? `Slowest query in this window: <span class="mono">${sq.qname}</span> (${sq.qtype}) — <b>${sq.latency_ms}ms</b> at ${sq.ts}`
+      : 'No queries in this window.';
+  });
+}
+function loadSecurity(){
+  fetch("{{ url_for('monitoring.api_security') }}").then(r=>r.json()).then(d=>{
+    document.getElementById('sec-rl').textContent = d.rate_limited;
+    document.getElementById('sec-acl').textContent = d.acl_refused;
+    document.getElementById('sec-blocked').textContent = d.blocklist_hits_24h;
+    document.getElementById('sec-failedlogin').textContent = d.failed_logins_24h;
+  });
+}
+loadPercentiles(); loadSecurity(); setInterval(loadSecurity, 10000);
+
+function loadSeries(){
+  fetch("{{ url_for('monitoring.api_series') }}").then(r=>r.json()).then(d=>{
+    drawSparkline(document.getElementById('qps-chart'), d.qps, accent);
+    drawSparkline(document.getElementById('latency-chart'), d.latency, "#F5A524");
+  });
+}
+function loadBreakdown(){
+  fetch("{{ url_for('monitoring.api_source_breakdown') }}").then(r=>r.json()).then(d=>{
+    const segs = d.breakdown.map(b => ({value:b.count, color:SOURCE_COLORS[b.source]||"#8D96AC"}));
+    drawDonut(document.getElementById('source-donut'), segs.length?segs:[{value:1,color:"#232B3B"}]);
+    document.getElementById('source-legend').innerHTML = d.breakdown.map(b =>
+      `<div style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:${SOURCE_COLORS[b.source]||'#8D96AC'}"></span>${b.source} <b style="margin-left:auto">${b.count}</b></div>`
+    ).join('') || '<span style="color:var(--text-faint)">No data yet</span>';
+  });
+}
+function loadResources(){
+  fetch("{{ url_for('monitoring.api_resources') }}").then(r=>r.json()).then(d=>{
+    document.getElementById('m-cpu').textContent = (d.resources.cpu_percent ?? '—') + '%';
+    document.getElementById('m-mem').textContent = (d.resources.memory_percent ?? '—') + '%';
+    document.getElementById('m-disk').textContent = (d.resources.disk_percent ?? '—') + '%';
+    document.getElementById('m-cache').textContent = d.cache.entries ?? 0;
+    const s = d.server_stats || {};
+    document.getElementById('m-total').textContent = s.queries ?? 0;
+    document.getElementById('m-acl').textContent = s.refused_acl ?? 0;
+    document.getElementById('m-rl').textContent = s.rate_limited ?? 0;
+    document.getElementById('m-err').textContent = s.errors ?? 0;
+  });
+}
+function loadLive(){
+  fetch("{{ url_for('monitoring.api_recent') }}?limit=25").then(r=>r.json()).then(d=>{
+    const rows = document.getElementById('live-rows');
+    rows.innerHTML = d.entries.slice().reverse().map(e => `
+      <tr><td style="color:var(--text-faint);">${e.ts.split(' ')[1]||e.ts}</td><td class="mono">${e.qname}</td><td>${e.qtype}</td>
+      <td><span class="badge" style="background:${SOURCE_COLORS[e.source]}22;color:${SOURCE_COLORS[e.source]}">${e.source}</span></td>
+      <td class="mono">${e.rcode}</td><td class="mono">${e.latency_ms}ms</td></tr>`).join('') ||
+      `<tr><td colspan="6" class="empty-state">No queries logged yet.</td></tr>`;
+  });
+}
+function clearCache(){ Nova.api("{{ url_for('monitoring.clear_cache') }}", {method:"POST"}).then(()=>Nova.toast("Cache cleared")); }
+function inspectCache(){
+  fetch("{{ url_for('monitoring.inspect_cache') }}").then(r=>r.json()).then(d=>{
+    const box = document.getElementById('cache-inspect');
+    box.innerHTML = d.entries.map(e => `${e.name} (${e.rtype}) — ttl ${e.ttl_remaining}s, ${e.answers} answer(s)`).join('<br>') || 'Cache is empty.';
+  });
+}
+
+// initial skeletons then real data
+document.getElementById('live-rows').innerHTML = Array.from({length:5}).map(()=>
+  `<tr>${Array.from({length:6}).map(()=>'<td><div class="skel skel-row" style="width:70%"></div></td>').join('')}</tr>`).join('');
+
+loadSeries(); loadBreakdown(); loadResources(); loadLive();
+setInterval(loadLive, 4000); setInterval(loadSeries, 15000); setInterval(loadBreakdown, 15000); setInterval(loadResources, 5000);
+</script>
+{% endblock %}

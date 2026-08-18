@@ -1,0 +1,23 @@
+version: "3.8"
+services:
+  novadns:
+    build: .
+    container_name: novadns
+    restart: unless-stopped
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "8080:8080/tcp"
+    environment:
+      - NOVADNS_SECRET=CHANGE-ME-TO-A-LONG-RANDOM-VALUE
+      - NOVADNS_DNS_PORT=53
+      - NOVADNS_WEB_PORT=8080
+    volumes:
+      - novadns-data:/app/data
+      - novadns-backups:/app/backups
+      - novadns-logs:/app/logs
+
+volumes:
+  novadns-data:
+  novadns-backups:
+  novadns-logs:

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block page_title %}Benchmark{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-head"><h3>{{ icon('activity') }} &nbsp;Run a benchmark</h3></div>
+  <div class="card-pad">
+    <div class="field-row">
+      <div class="field"><label>Target name</label><input class="mono" id="bm-target" value="example.com."></div>
+      <div class="field"><label>Type</label><input class="mono" id="bm-qtype" value="A"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Total queries</label><input class="mono" id="bm-total" value="500"></div>
+      <div class="field"><label>Concurrency</label><input class="mono" id="bm-concurrency" value="20"></div>
+    </div>
+    <button class="btn btn-primary" onclick="runBenchmark()">{{ icon('activity') }} Run now</button>
+    <div id="bm-result" style="margin-top:16px;"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h3>History</h3></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>When</th><th>Queries</th><th>QPS</th><th>Avg latency</th><th>p95</th><th>p99</th><th>Cache hit</th></tr></thead>
+    <tbody>
+      {% for r in runs %}
+      <tr>
+        <td style="color:var(--text-faint);">{{ r.run_at | dtfmt }}</td>
+        <td class="mono">{{ r.queries }}</td>
+        <td class="mono">{{ r.qps }}</td>
+        <td class="mono">{{ r.avg_latency_ms }}ms</td>
+        <td class="mono">{{ r.p95_latency_ms }}ms</td>
+        <td class="mono">{{ r.p99_latency_ms }}ms</td>
+        <td class="mono">{{ r.cache_hit_ratio }}%</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty-state">No benchmark runs yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function runBenchmark(){
+  const body = {
+    target: document.getElementById('bm-target').value, qtype: document.getElementById('bm-qtype').value,
+    total: document.getElementById('bm-total').value, concurrency: document.getElementById('bm-concurrency').value,
+  };
+  const box = document.getElementById('bm-result');
+  box.innerHTML = '<div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  Nova.api("{{ url_for('benchmark.run') }}", {method:"POST", body}).then(d=>{
+    box.innerHTML = `
+      <div class="grid grid-4" style="margin-bottom:12px;">
+        <div class="card stat-card"><div class="label">QPS</div><div class="value">${d.qps}</div></div>
+        <div class="card stat-card"><div class="label">Avg latency</div><div class="value">${d.avg_latency_ms}ms</div></div>
+        <div class="card stat-card"><div class="label">p95</div><div class="value">${d.p95_latency_ms}ms</div></div>
+        <div class="card stat-card"><div class="label">Cache hit</div><div class="value">${d.cache_hit_ratio}%</div></div>
+      </div>
+      ${d.recommendations.map(t=>`<div style="color:var(--text-muted); font-size:13px; padding:4px 0;">• ${t}</div>`).join('')}
+    `;
+    setTimeout(()=>location.reload(), 1500);
+  });
+}
+</script>
+{% endblock %}

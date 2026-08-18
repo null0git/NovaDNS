@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block page_title %}DNS Forwarding{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+  <p style="color:var(--text-muted); margin:0; max-width:560px;">Upstream servers used when a query isn't answered by a local zone. Ordered by priority; NovaDNS fails over automatically if one is unhealthy.</p>
+  <button class="btn btn-primary" onclick="Nova.openModal('add-fw-modal')">{{ icon('plus') }} Add forwarder</button>
+</div>
+
+<div class="card">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Address</th><th>Protocol</th><th>Scope</th><th>Priority</th><th>Health</th><th>Latency</th><th></th></tr></thead>
+    <tbody>
+      {% for f in forwarders %}
+      <tr>
+        <td class="mono">{{ f.address }}:{{ f.port }} {% if f.label %}<span style="color:var(--text-faint);">({{ f.label }})</span>{% endif %}</td>
+        <td><span class="badge badge-blue">{{ f.protocol|upper }}</span></td>
+        <td>{% if f.condition_domain %}<span class="badge badge-purple mono">{{ f.condition_domain }}</span>{% else %}<span class="badge badge-gray">global</span>{% endif %}</td>
+        <td class="mono">{{ f.priority }}</td>
+        <td>{% if f.healthy %}<span class="badge badge-green">{{ icon('check') }} healthy</span>{% else %}<span class="badge badge-red">unhealthy</span>{% endif %}</td>
+        <td class="mono">{{ (f.last_latency_ms|round(1)) if f.last_latency_ms else '—' }}{{ ' ms' if f.last_latency_ms }}</td>
+        <td style="text-align:right; white-space:nowrap;">
+          <button class="btn btn-sm btn-outline" onclick="testFw({{ f.id }})">Test</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleFw({{ f.id }})">{{ 'Disable' if f.enabled else 'Enable' }}</button>
+          <button class="btn btn-sm btn-danger" onclick="delFw({{ f.id }})">{{ icon('trash') }}</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty-state">No forwarders configured — public domains won't resolve until you add one.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="modal-backdrop" id="add-fw-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Add forwarder</h3><button class="icon-btn" style="margin-left:auto;" data-close-modal="add-fw-modal">{{ icon('x') }}</button></div>
+    <div class="modal-body">
+      <div class="field-row">
+        <div class="field"><label>Address</label><input class="mono" id="fw-address" placeholder="1.1.1.1"></div>
+        <div class="field"><label>Port</label><input class="mono" id="fw-port" value="53"></div>
+      </div>
+      <div class="field">
+        <label>Protocol</label>
+        <select id="fw-protocol"><option value="udp">UDP</option><option value="tcp">TCP</option>
+          <option value="doh">DNS-over-HTTPS</option><option value="dot">DNS-over-TLS</option><option value="doq">DNS-over-QUIC</option></select>
+        <div class="help">DoH posts to the address as a URL (or hostname + /dns-query). DoT connects over TLS on port 853 by default. Both are live, not just recorded.</div>
+      </div>
+      <div class="field"><label>Label (optional)</label><input id="fw-label" placeholder="Cloudflare"></div>
+      <div class="field"><label>Conditional forwarding domain (optional)</label><input class="mono" id="fw-condition" placeholder="corp.internal — leave blank for global"></div>
+      <div class="field"><label>Priority</label><input class="mono" id="fw-priority" value="100"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal="add-fw-modal">Cancel</button>
+      <button class="btn btn-primary" onclick="submitFw()">Add</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function submitFw(){
+  const body = {
+    address: document.getElementById('fw-address').value,
+    port: document.getElementById('fw-port').value,
+    protocol: document.getElementById('fw-protocol').value,
+    label: document.getElementById('fw-label').value,
+    condition_domain: document.getElementById('fw-condition').value,
+    priority: document.getElementById('fw-priority').value,
+  };
+  Nova.api("{{ url_for('forwarders.add') }}", {method:"POST", body}).then(()=>location.reload());
+}
+function delFw(id){ if(Nova.confirmDanger("Remove this forwarder?")) Nova.api(`/forwarders/${id}`, {method:"DELETE"}).then(()=>location.reload()); }
+function toggleFw(id){ Nova.api(`/forwarders/${id}/toggle`, {method:"POST"}).then(()=>location.reload()); }
+function testFw(id){
+  Nova.toast("Testing…");
+  Nova.api(`/forwarders/${id}/test`, {method:"POST"}).then(d=>{
+    if(d.ok) Nova.toast(`OK — ${d.latency_ms}ms, ${d.answers} answer(s)`);
+    else Nova.toast(d.error || "Test failed", "error");
+    setTimeout(()=>location.reload(), 900);
+  });
+}
+</script>
+{% endblock %}

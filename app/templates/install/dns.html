@@ -1,0 +1,25 @@
+{% extends "install/_wizard_base.html" %}
+{% block wizard_body %}
+<div class="eyebrow">Step 4 of {{ steps|length }}</div>
+<h2 style="margin:8px 0 6px;">DNS configuration</h2>
+<p style="color:var(--text-muted); margin:0 0 20px;">Optionally create your first zone now — you can always add more later from Zones.</p>
+<form method="post" action="{{ url_for('install.save_step', step='dns') }}">
+  <div class="field">
+    <label>Primary domain (optional)</label>
+    <input class="mono" name="primary_domain" placeholder="home.lan">
+    <div class="help">Leave blank to skip — you can create zones later via Simple DNS Mode.</div>
+  </div>
+  <div class="field">
+    <label>Default TTL (seconds)</label>
+    <input class="mono" name="default_ttl" value="3600">
+  </div>
+  <div class="field" style="display:flex; align-items:center; gap:10px;">
+    <label class="switch"><input type="checkbox" name="enable_recursive"><span class="slider"></span></label>
+    <label style="margin:0;">Enable recursive resolution for local zones (in addition to forwarding)</label>
+  </div>
+  <div style="display:flex; justify-content:space-between;">
+    <a class="btn btn-outline" href="{{ url_for('install.wizard', step='account') }}">Back</a>
+    <button class="btn btn-primary" type="submit">Continue</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "bare.html" %}
+{% block content %}
+<div style="min-height:100vh; padding:40px 20px; display:flex; justify-content:center;">
+<div style="width:640px; max-width:100%;">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:26px;">
+    <img src="{{ url_for('static', filename='img/logo-icon.png') }}" alt="NovaDNS" style="width:36px;height:36px;object-fit:contain;">
+    <div style="font-family:var(--font-display);font-weight:700;font-size:18px;">NovaDNS Setup</div>
+  </div>
+
+  <div class="progress-steps">
+    {% for s in steps %}
+      <div class="pstep {{ 'done' if loop.index0 < step_index else ('active' if loop.index0 == step_index else '') }}">
+        <div class="num">{{ '✓' if loop.index0 < step_index else loop.index }}</div>
+      </div>
+      {% if not loop.last %}<div class="pline"></div>{% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="card card-pad page-enter">
+    {% block wizard_body %}{% endblock %}
+  </div>
+</div>
+</div>
+{% endblock %}

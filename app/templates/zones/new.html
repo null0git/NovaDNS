@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block page_title %}New Zone{% endblock %}
+{% block content %}
+<div class="card" style="max-width:520px; margin:0 auto;">
+  <div class="card-head"><h3>Create an advanced zone</h3></div>
+  <div class="card-pad">
+    <form method="post">
+      <div class="field">
+        <label>Zone name</label>
+        <input class="mono" name="name" placeholder="example.com" required>
+      </div>
+      <div class="field">
+        <label>Default TTL (seconds)</label>
+        <input class="mono" name="default_ttl" value="3600">
+      </div>
+      <div class="field">
+        <label>Template</label>
+        <select name="template" id="tpl-select" onchange="onTplChange()">
+          {% for key, t in templates.items() %}
+          <option value="{{ key }}">{{ t.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field" id="tpl-ip-field" style="display:none;">
+        <label>IP address for template records</label>
+        <input class="mono" name="template_ip" placeholder="192.168.1.50">
+      </div>
+      <div class="field" id="tpl-acl-field" style="display:none;">
+        <label>Restrict to client network/group</label>
+        <input class="mono" name="template_acl" placeholder="192.168.1.0/24 or group:staff">
+      </div>
+      <button class="btn btn-primary" style="width:100%;" type="submit">Create zone</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function onTplChange(){
+  const v = document.getElementById('tpl-select').value;
+  document.getElementById('tpl-ip-field').style.display = v === 'blank' ? 'none' : 'block';
+  document.getElementById('tpl-acl-field').style.display = v === 'internal_service' ? 'block' : 'none';
+}
+onTplChange();
+</script>
+{% endblock %}

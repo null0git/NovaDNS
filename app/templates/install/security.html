@@ -1,0 +1,24 @@
+{% extends "install/_wizard_base.html" %}
+{% block wizard_body %}
+<div class="eyebrow">Step 6 of {{ steps|length }}</div>
+<h2 style="margin:8px 0 6px;">Security</h2>
+<p style="color:var(--text-muted); margin:0 0 20px;">Baseline security settings — you can revisit all of these under Settings later.</p>
+<form method="post" action="{{ url_for('install.save_step', step='security') }}">
+  <div class="field" style="display:flex; align-items:center; gap:10px;">
+    <label class="switch"><input type="checkbox" name="enable_dnssec"><span class="slider"></span></label>
+    <label style="margin:0;">Enable DNSSEC on new zones</label>
+  </div>
+  <div class="field" style="display:flex; align-items:center; gap:10px;">
+    <label class="switch"><input type="checkbox" name="enable_https_admin" checked><span class="slider"></span></label>
+    <label style="margin:0;">Prefer HTTPS for the admin web interface (via reverse proxy or ACME)</label>
+  </div>
+  <div class="field">
+    <label>Session timeout (minutes)</label>
+    <input class="mono" name="session_timeout" value="60">
+  </div>
+  <div style="display:flex; justify-content:space-between;">
+    <a class="btn btn-outline" href="{{ url_for('install.wizard', step='upstream') }}">Back</a>
+    <button class="btn btn-primary" type="submit">Continue</button>
+  </div>
+</form>
+{% endblock %}

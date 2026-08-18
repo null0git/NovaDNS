@@ -1,0 +1,24 @@
+{% extends "install/_wizard_base.html" %}
+{% block wizard_body %}
+<div class="eyebrow">Step 5 of {{ steps|length }}</div>
+<h2 style="margin:8px 0 6px;">Upstream DNS</h2>
+<p style="color:var(--text-muted); margin:0 0 20px;">Queries for domains outside your local zones are forwarded here.</p>
+<form method="post" action="{{ url_for('install.save_step', step='upstream') }}">
+  <div class="field">
+    <label>Provider preset</label>
+    <select name="upstream_preset">
+      {% for key, servers in presets.items() %}
+      <option value="{{ key }}">{{ key|capitalize }} — {{ servers[0][0] }}, {{ servers[1][0] }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label>Custom upstream (optional, host:port)</label>
+    <input class="mono" name="custom_upstream" placeholder="10.0.0.1:53">
+  </div>
+  <div style="display:flex; justify-content:space-between;">
+    <a class="btn btn-outline" href="{{ url_for('install.wizard', step='dns') }}">Back</a>
+    <button class="btn btn-primary" type="submit">Continue</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block page_title %}Simple DNS Mode{% endblock %}
+{% block content %}
+<div class="card" style="max-width:520px; margin:0 auto;">
+  <div class="card-head"><h3>{{ icon('wand') }} &nbsp;Add a domain</h3></div>
+  <div class="card-pad">
+    <p style="color:var(--text-muted); margin-top:0;">Point a name at an IP address. NovaDNS creates the zone, SOA, NS, and both apex + <span class="mono">www</span> records automatically.</p>
+    {% if error %}<div class="badge badge-red" style="width:100%;padding:10px;margin-bottom:14px;">{{ icon('alert-triangle') }} {{ error }}</div>{% endif %}
+    <form method="post">
+      <div class="field">
+        <label>Domain name</label>
+        <input class="mono" name="domain" placeholder="home.lan" required>
+      </div>
+      <div class="field">
+        <label>IP address</label>
+        <input class="mono" name="ip" placeholder="192.168.1.50" required>
+      </div>
+      <div class="field">
+        <label>TTL (seconds)</label>
+        <input class="mono" name="ttl" value="3600">
+      </div>
+      <button class="btn btn-primary" style="width:100%;" type="submit">{{ icon('check') }} Create zone</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "bare.html" %}
+{% block content %}
+<div class="login-wrap">
+  <div class="card login-card card-pad page-enter">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:22px;">
+      {% if logo_ext %}
+      <img src="{{ url_for('auth.logo_file') }}" alt="" style="width:34px;height:34px;border-radius:9px;object-fit:cover;">
+      {% else %}
+      <img src="{{ url_for('static', filename='img/logo-icon.png') }}" alt="{{ site_name }}" style="width:36px;height:36px;object-fit:contain;">
+      {% endif %}
+      <div>
+        <div style="font-family:var(--font-display);font-weight:700;font-size:17px;">{{ site_name }}</div>
+        <div class="eyebrow">Enterprise DNS Platform</div>
+      </div>
+    </div>
+    {% if error %}
+    <div class="badge badge-red" style="width:100%;padding:10px;margin-bottom:16px;">{{ icon('alert-triangle') }} {{ error }}</div>
+    {% endif %}
+    <form method="post">
+      <div class="field">
+        <label>Username</label>
+        <input name="username" autofocus required>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" required>
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:6px;" type="submit">Sign in</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,126 @@
+{% extends "bare.html" %}
+{% block content %}
+<div style="min-height:100vh;">
+  <header style="border-bottom:1px solid var(--border); padding:16px 20px;">
+    <div style="max-width:820px; margin:0 auto; display:flex; align-items:center; gap:12px;">
+      {% if logo_ext %}
+      <img src="{{ url_for('auth.logo_file') }}" alt="" style="width:28px;height:28px;border-radius:7px;object-fit:cover;">
+      {% else %}
+      <img src="{{ url_for('static', filename='img/logo-icon.png') }}" alt="{{ site_name }}" style="width:30px;height:30px;object-fit:contain;">
+      {% endif %}
+      <div style="font-family:var(--font-display);font-weight:700;font-size:16px;">{{ site_name }} <span style="color:var(--text-faint); font-weight:500;">Lookup</span></div>
+      <div style="margin-left:auto; display:flex; gap:18px;">
+        <a href="{{ url_for('status.public_status') }}" style="font-size:13px; color:var(--text-muted); font-weight:600;">Status</a>
+        <a href="{{ url_for('auth.login') }}" style="font-size:13px; color:var(--text-muted); font-weight:600;">Admin sign in</a>
+      </div>
+    </div>
+  </header>
+
+<div style="padding:56px 20px 80px;">
+<div style="max-width:760px; margin:0 auto;">
+  <div style="text-align:center; margin-bottom:30px;">
+    <h1 style="font-size:30px; margin:0 0 8px;">Check any domain's DNS records</h1>
+    <p style="color:var(--text-muted); margin:0;">Real-time resolution through {{ site_name }}'s own resolver — A, AAAA, MX, TXT, NS, CNAME, CAA, SOA, SRV.</p>
+  </div>
+
+  <div style="display:flex; gap:10px; margin-bottom:14px;">
+    <input class="mono" id="domain-input" placeholder="example.com" style="flex:1; height:50px; font-size:15px;" autofocus>
+    <button class="btn btn-primary" style="height:50px; padding:0 24px;" onclick="doSearch()">{{ icon('search') }} Search</button>
+  </div>
+  <div style="display:flex; gap:8px; justify-content:center; margin-bottom:36px; flex-wrap:wrap;">
+    <span style="font-size:12px; color:var(--text-faint); align-self:center;">Try:</span>
+    {% for ex in ['example.com', 'google.com', 'cloudflare.com'] %}
+    <button class="btn btn-sm btn-outline" onclick="document.getElementById('domain-input').value='{{ ex }}'; doSearch();">{{ ex }}</button>
+    {% endfor %}
+  </div>
+
+  <div id="results"></div>
+</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const input = document.getElementById('domain-input');
+input.addEventListener('keydown', e => { if(e.key === 'Enter') doSearch(); });
+
+const RTYPE_META = {
+  A:      {icon:'🌐', label:'A — IPv4 address'},
+  AAAA:   {icon:'🌐', label:'AAAA — IPv6 address'},
+  MX:     {icon:'✉️', label:'MX — Mail exchange'},
+  TXT:    {icon:'📝', label:'TXT — Text record'},
+  NS:     {icon:'🗂️', label:'NS — Name server'},
+  CNAME:  {icon:'🔗', label:'CNAME — Alias'},
+  CAA:    {icon:'🔒', label:'CAA — Certificate authority authorization'},
+  SOA:    {icon:'📋', label:'SOA — Start of authority'},
+  SRV:    {icon:'🔧', label:'SRV — Service location'},
+};
+
+// Formats a record's value object into the human-readable string a real
+// DNS tool would show, instead of dumping the raw JSON shape.
+function formatValue(rtype, v){
+  switch(rtype){
+    case 'A': case 'AAAA': return v.address;
+    case 'CNAME': case 'NS': return v.target;
+    case 'MX': return `${v.priority} &nbsp;${v.target}`;
+    case 'TXT': return `"${(v.text||'').replace(/"/g,'&quot;')}"`;
+    case 'CAA': return `${v.flags} ${v.tag} "${v.value}"`;
+    case 'SRV': return `priority ${v.priority}, weight ${v.weight}, port ${v.port} &nbsp;→&nbsp; ${v.target}`;
+    case 'SOA': return `${v.mname} · serial ${v.serial} · refresh ${v.refresh}s · retry ${v.retry}s · expire ${v.expire}s · min ${v.minimum}s`;
+    default: return JSON.stringify(v);
+  }
+}
+
+function rowsFor(rtype, data){
+  if(!data.values.length) return '';
+  const meta = RTYPE_META[rtype] || {icon:'▪️', label:rtype};
+  return `<div class="card" style="margin-bottom:12px;">
+    <div class="card-head" style="justify-content:space-between;">
+      <h3>${meta.icon} &nbsp;${meta.label}</h3>
+      <span class="badge badge-blue mono">${data.elapsed_ms}ms · ${data.source}</span>
+    </div>
+    <div class="table-wrap"><table><tbody>
+      ${data.values.map(v => `<tr><td class="mono" style="max-width:460px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${formatValue(rtype, v.value)}</td><td class="mono" style="color:var(--text-faint); white-space:nowrap;">TTL ${v.ttl}s</td></tr>`).join('')}
+    </tbody></table></div>
+  </div>`;
+}
+
+function doSearch(){
+  const domain = input.value.trim();
+  if(!domain) return;
+  const box = document.getElementById('results');
+  box.innerHTML = `<div class="card card-pad"><div class="skel skel-row"></div><div class="skel skel-row" style="width:60%"></div><div class="skel skel-row" style="width:40%"></div></div>`;
+  fetch("{{ url_for('lookup_portal.search') }}", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({domain})})
+    .then(r=>r.json()).then(d=>{
+      if(d.error){ box.innerHTML = `<div class="badge badge-red" style="padding:10px; width:100%; box-sizing:border-box;">${d.error}</div>`; return; }
+
+      let html = `<div class="card card-pad page-enter" style="margin-bottom:18px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+        <span class="badge ${d.exists ? 'badge-green' : 'badge-red'}" style="font-size:13px; padding:7px 16px;">${d.exists ? '✓ Resolves' : 'No records found'}</span>
+        <span class="mono" style="font-size:16px; font-weight:700;">${d.domain}</span>
+        <span style="margin-left:auto; color:var(--text-muted); font-size:12.5px;">resolved in ${d.total_elapsed_ms}ms</span>
+      </div>`;
+
+      const withValues = Object.entries(d.records).filter(([_, data]) => data.values.length);
+      if(!withValues.length){
+        html += `<div class="empty-state" style="margin-bottom:18px;">No DNS records of any common type were found for this domain.</div>`;
+      } else {
+        for(const [rtype, data] of withValues) html += rowsFor(rtype, data);
+      }
+
+      html += `<div class="card"><div class="card-head"><h3>{{ icon('lock') }} &nbsp;Registrar information (RDAP)</h3></div><div class="card-pad">`;
+      if(d.rdap.available){
+        html += `<div style="display:flex; flex-direction:column; gap:10px;">
+          <div><span class="eyebrow">Registrar</span><div style="margin-top:2px;">${d.rdap.registrar || '—'}</div></div>
+          <div><span class="eyebrow">Nameservers</span><div class="mono" style="margin-top:2px;">${(d.rdap.nameservers||[]).join(', ') || '—'}</div></div>
+          <div><span class="eyebrow">Status</span><div style="margin-top:2px;">${(d.rdap.status||[]).join(', ') || '—'}</div></div>
+        </div>`;
+      } else {
+        html += `<p style="color:var(--text-muted); margin:0;">Registrar lookup (RDAP) isn't available right now — this needs outbound internet access to the registry's RDAP service. The DNS record results above come directly from {{ site_name }} itself and aren't affected by this.</p>`;
+      }
+      html += `</div></div>`;
+      box.innerHTML = html;
+    })
+    .catch(() => { box.innerHTML = `<div class="badge badge-red" style="padding:10px; width:100%; box-sizing:border-box;">Something went wrong reaching the server. Try again.</div>`; });
+}
+</script>
+{% endblock %}

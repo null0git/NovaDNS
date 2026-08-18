@@ -1,0 +1,21 @@
+{% extends "install/_wizard_base.html" %}
+{% block wizard_body %}
+<div class="eyebrow">Step 3 of {{ steps|length }}</div>
+<h2 style="margin:8px 0 6px;">Create your administrator account</h2>
+<p style="color:var(--text-muted); margin:0 0 20px;">This account manages zones, users, and every setting in NovaDNS.</p>
+<form method="post" action="{{ url_for('install.save_step', step='account') }}">
+  <div class="field">
+    <label>Username</label>
+    <input name="username" required autofocus>
+  </div>
+  <div class="field">
+    <label>Password</label>
+    <input type="password" name="password" minlength="8" required>
+    <div class="help">At least 8 characters.</div>
+  </div>
+  <div style="display:flex; justify-content:space-between;">
+    <a class="btn btn-outline" href="{{ url_for('install.wizard', step='network') }}">Back</a>
+    <button class="btn btn-primary" type="submit">Continue</button>
+  </div>
+</form>
+{% endblock %}

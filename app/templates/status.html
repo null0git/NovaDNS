@@ -1,0 +1,132 @@
+{% extends "bare.html" %}
+{% block content %}
+<div style="min-height:100vh;">
+  <header style="border-bottom:1px solid var(--border); padding:16px 20px;">
+    <div style="max-width:900px; margin:0 auto; display:flex; align-items:center; gap:12px;">
+      {% if logo_ext %}
+      <img src="{{ url_for('auth.logo_file') }}" alt="" style="width:28px;height:28px;border-radius:7px;object-fit:cover;">
+      {% else %}
+      <img src="{{ url_for('static', filename='img/logo-icon.png') }}" alt="{{ site_name }}" style="width:30px;height:30px;object-fit:contain;">
+      {% endif %}
+      <div style="font-family:var(--font-display);font-weight:700;font-size:16px;">{{ site_name }} <span style="color:var(--text-faint); font-weight:500;">Status</span></div>
+      <div style="margin-left:auto; display:flex; gap:18px;">
+        <a href="{{ url_for('lookup_portal.index') }}" style="font-size:13px; color:var(--text-muted); font-weight:600;">DNS Lookup</a>
+        <a href="{{ url_for('auth.login') }}" style="font-size:13px; color:var(--text-muted); font-weight:600;">Admin sign in</a>
+      </div>
+    </div>
+  </header>
+
+<div style="max-width:900px; margin:0 auto; padding:44px 20px 70px;">
+
+  <div class="card card-pad page-enter" style="display:flex; align-items:center; gap:16px; margin-bottom:22px;">
+    <span class="pulse-dot {{ '' if running else 'down' }}" style="width:14px;height:14px;"></span>
+    <div>
+      <div style="font-weight:700; font-size:18px; font-family:var(--font-display);">{{ 'All systems operational' if running else 'DNS service is down' }}</div>
+      <div class="help">Running for {{ (uptime_seconds // 86400) }}d {{ (uptime_seconds % 86400) // 3600 }}h {{ (uptime_seconds % 3600) // 60 }}m</div>
+    </div>
+    <div style="margin-left:auto; text-align:right;">
+      <div style="font-family:var(--font-display); font-size:26px; font-weight:700;">{{ uptime_pct }}%</div>
+      <div class="help">uptime, last 24h</div>
+    </div>
+  </div>
+
+  {% if maintenance and maintenance.enabled %}
+  <div class="badge badge-amber" style="width:100%; padding:12px; margin-bottom:18px; box-sizing:border-box;">{{ icon('alert-triangle') }} Scheduled maintenance: {{ maintenance.message }}</div>
+  {% endif %}
+
+  <div class="grid grid-3 stagger" style="margin-bottom:22px;">
+    {% for key, label in [('dns_udp','DNS (UDP)'), ('dns_tcp','DNS (TCP)'), ('admin_ui','Admin UI')] %}
+    <div class="card stat-card">
+      <div class="label">{{ label }}</div>
+      <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+        <span class="pulse-dot {{ '' if services[key].online else 'down' }}"></span>
+        <span style="font-weight:600;">{{ 'Online' if services[key].online else 'Offline' }}</span>
+      </div>
+      {% if services[key].latency_ms is not none %}<div class="help">{{ services[key].latency_ms }}ms response</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="card" style="margin-bottom:22px;">
+    <div class="card-head"><h3>30-day uptime history</h3></div>
+    <div class="card-pad">
+      <div style="display:flex; gap:2px; height:40px;">
+        {% for day in timeline %}
+        <div style="flex:1; background:{{ 'var(--success)' if day.pct >= 99.9 else ('var(--warning)' if day.pct >= 95 else 'var(--danger)') }}; border-radius:2px;" title="{{ day.date }}: {{ day.pct }}%"></div>
+        {% else %}
+        <div class="empty-state" style="flex:1;">No traffic data yet.</div>
+        {% endfor %}
+      </div>
+      <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:11.5px; color:var(--text-faint);">
+        <span>{{ timeline[0].date if timeline else '' }}</span><span>today</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-3" style="margin-bottom:22px;">
+    <div class="card stat-card"><div class="label">Avg response (1h)</div><div class="value" style="font-size:22px;">{{ avg_latency }}ms</div></div>
+    <div class="card stat-card"><div class="label">Cache hit ratio</div><div class="value" style="font-size:22px;">{{ cache_hit_ratio }}%</div></div>
+    <div class="card stat-card"><div class="label">Software</div><div class="value" style="font-size:22px;">NovaDNS</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:22px;">
+    <div class="card-head"><h3>Recent incidents</h3></div>
+    <div class="card-pad">
+      {% for i in incidents %}
+      <div style="display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--border);">
+        <span class="badge {{ 'badge-red' if i.severity=='critical' else 'badge-amber' }}">{{ i.severity }}</span>
+        <span>{{ i.message }}</span>
+        <span style="margin-left:auto; color:var(--text-faint); font-size:12px;">{{ i.ts | dtfmt }}</span>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="glyph">{{ icon('check') }}</div>
+        No incidents reported in the last 30 days.
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ---------------------------------------------------------- connect -->
+  <div class="card" style="margin-bottom:22px;">
+    <div class="card-head"><h3>{{ icon('wifi') }} &nbsp;Connect to this DNS server</h3><span class="sub">works for any device on the same network</span></div>
+    <div class="card-pad">
+      <p style="color:var(--text-muted); margin-top:0;">Point your device's DNS settings at whichever address below matches your network, then follow the steps for your platform. Setting it once on your <b>router</b> covers every device automatically — that's usually the easiest option.</p>
+      <label style="margin-bottom:8px; display:block;">Server address{{ 'es' if ips|length > 1 else '' }} (port {{ port }})</label>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;">
+        {% for ip in ips %}
+        <div class="copybox"><span>{{ ip }}</span><button class="btn btn-sm btn-ghost" data-copy="{{ ip }}">{{ icon('copy') }}</button></div>
+        {% endfor %}
+      </div>
+
+      <div class="tabs" id="connect-tabs">
+        {% for p in platforms %}
+        <div class="tab {{ 'active' if loop.first }}" data-target="ctab-{{ p.id }}">{{ p.name }}</div>
+        {% endfor %}
+      </div>
+      {% for p in platforms %}
+      <div class="connect-pane" id="ctab-{{ p.id }}" style="{{ '' if loop.first else 'display:none;' }}">
+        <ol style="margin:0; padding-left:18px; color:var(--text); line-height:1.9;">
+          {% for step in p.steps %}<li>{{ step }}</li>{% endfor %}
+        </ol>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div style="text-align:center; color:var(--text-faint); font-size:12px; padding-top:10px;">
+    Powered by {{ site_name }} — a self-hosted DNS platform.
+  </div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('#connect-tabs .tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('#connect-tabs .tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.connect-pane').forEach(p=>p.style.display='none');
+  t.classList.add('active');
+  document.getElementById(t.dataset.target).style.display='block';
+}));
+</script>
+{% endblock %}

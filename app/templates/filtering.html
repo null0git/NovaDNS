@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block page_title %}Filtering{% endblock %}
+{% block content %}
+<div class="grid grid-4" style="margin-bottom:20px;">
+  <div class="card stat-card"><div class="label">Blocked today</div><div class="value">{{ blocked_today }}</div></div>
+  <div class="card stat-card"><div class="label">Active blocklists</div><div class="value">{{ blocklists|selectattr('enabled')|list|length }}</div></div>
+  <div class="card stat-card"><div class="label">Total block entries</div><div class="value">{{ blocklists|sum(attribute='entry_count') }}</div></div>
+  <div class="card stat-card"><div class="label">Custom entries</div><div class="value">{{ custom|length }}</div></div>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-head"><h3>{{ icon('shield') }} &nbsp;Category filters</h3><span class="sub">Family Safe DNS — real domain lists, not placeholders</span></div>
+  <div class="card-pad grid grid-3">
+    {% for id, label in categories %}
+    <div style="display:flex; align-items:center; gap:10px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:10px 12px;">
+      <label class="switch"><input type="checkbox" {{ 'checked' if id in enabled_cats }} onchange="toggleCat('{{ id }}', this)"><span class="slider"></span></label>
+      <span style="flex:1;">{{ label }}</span>
+      {% if id in enabled_cats %}
+      <button class="btn btn-sm btn-ghost" onclick="viewDomains('{{ id }}', '{{ label }}')" title="View blocked domains">{{ icon('search') }}</button>
+      {% endif %}
+      {% if id in has_seed %}<span class="badge badge-green" title="Bundled real domain list — works offline">seed</span>
+      {% elif id in has_feed %}<span class="badge badge-blue" title="Live threat-intel feed — needs internet to populate">feed</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="card-pad" style="border-top:1px solid var(--border); font-size:12.5px; color:var(--text-muted);">
+    <span class="badge badge-green">seed</span> = bundled real, well-known domains, blocks immediately offline. &nbsp;
+    <span class="badge badge-blue">feed</span> = subscribes to a live public threat-intel source (StevenBlack hosts / URLhaus / OpenPhish) — needs internet access to sync since security lists go stale fast.
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-head" style="justify-content:space-between;"><h3>{{ icon('refresh') }} &nbsp;Subscribed blocklists</h3>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-sm btn-outline" onclick="Nova.openModal('upload-blocklist-modal')">{{ icon('upload') }} Import file</button>
+      <button class="btn btn-sm btn-primary" onclick="Nova.openModal('add-blocklist-modal')">{{ icon('plus') }} Add URL</button>
+    </div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th>Category</th><th>Source</th><th>Entries</th><th>Last synced</th><th></th></tr></thead>
+    <tbody>
+      {% for b in blocklists %}
+      <tr>
+        <td>{{ b.name }}</td>
+        <td><span class="badge badge-gray">{{ b.category }}</span></td>
+        <td class="mono" style="max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ b.source_url or 'bundled seed / file import' }}</td>
+        <td class="mono">{{ b.entry_count }}</td>
+        <td style="color:var(--text-faint);">{{ b.last_updated | dtfmt if b.last_updated else 'never' }}</td>
+        <td style="text-align:right; white-space:nowrap;">
+          {% if b.source_url %}<button class="btn btn-sm btn-outline" onclick="syncBlocklist({{ b.id }})">Sync now</button>{% endif %}
+          <button class="btn btn-sm btn-danger" onclick="delBlocklist({{ b.id }})">{{ icon('trash') }}</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty-state">No blocklists yet — enable a category above or add one here.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+{% if top_blocked %}
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-head"><h3>Top blocked domains</h3><span class="sub">24h, real query log data</span></div>
+  <div class="table-wrap"><table>
+    <tbody>
+      {% for t in top_blocked %}
+      <tr><td class="mono">{{ t.qname }}</td><td style="text-align:right; color:var(--text-muted);">{{ t.c }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}
+
+<div class="modal-backdrop" id="add-blocklist-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Add blocklist by URL</h3><button class="icon-btn" style="margin-left:auto;" data-close-modal="add-blocklist-modal">{{ icon('x') }}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Name</label><input id="bl-name" placeholder="StevenBlack hosts"></div>
+      <div class="field"><label>Source URL (hosts-file or plain domain list)</label><input class="mono" id="bl-url" placeholder="https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"></div>
+      <div class="help">Synced automatically every 24 hours, or on demand with "Sync now". Needs internet access to fetch.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal="add-blocklist-modal">Cancel</button>
+      <button class="btn btn-primary" onclick="addBlocklist()">Add</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="upload-blocklist-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Import blocklist from file</h3><button class="icon-btn" style="margin-left:auto;" data-close-modal="upload-blocklist-modal">{{ icon('x') }}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Name</label><input id="up-name" placeholder="My custom list"></div>
+      <div class="field"><label>Category</label><input id="up-category" placeholder="custom" value="custom"></div>
+      <div class="field"><label>File (hosts-format or one domain per line)</label><input type="file" id="up-file" accept=".txt,.hosts"></div>
+      <div class="help">Works fully offline — no source URL needed.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal="upload-blocklist-modal">Cancel</button>
+      <button class="btn btn-primary" onclick="uploadBlocklist()">Import</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="view-domains-modal">
+  <div class="modal" style="width:480px;">
+    <div class="modal-head"><h3 id="vd-title">Domains</h3><button class="icon-btn" style="margin-left:auto;" data-close-modal="view-domains-modal">{{ icon('x') }}</button></div>
+    <div class="modal-body" id="vd-body" style="max-height:420px; overflow-y:auto;"></div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head" style="justify-content:space-between;"><h3>Custom blocklist</h3>
+      <button class="btn btn-sm btn-primary" onclick="addCustom('block')">{{ icon('plus') }} Add</button>
+    </div>
+    <div class="table-wrap"><table>
+      <tbody>
+        {% for c in custom if c.list_type == 'block' %}
+        <tr><td class="mono">{{ c.domain }}</td><td>{% if c.is_regex %}<span class="badge badge-purple">regex</span>{% endif %}</td>
+        <td style="text-align:right;"><button class="btn btn-sm btn-danger" onclick="delCustom({{ c.id }})">{{ icon('trash') }}</button></td></tr>
+        {% else %}
+        <tr><td class="empty-state" colspan="3">No custom blocked domains.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-head" style="justify-content:space-between;"><h3>Custom allowlist</h3>
+      <button class="btn btn-sm btn-primary" onclick="addCustom('allow')">{{ icon('plus') }} Add</button>
+    </div>
+    <div class="table-wrap"><table>
+      <tbody>
+        {% for c in custom if c.list_type == 'allow' %}
+        <tr><td class="mono">{{ c.domain }}</td><td>{% if c.is_regex %}<span class="badge badge-purple">regex</span>{% endif %}</td>
+        <td style="text-align:right;"><button class="btn btn-sm btn-danger" onclick="delCustom({{ c.id }})">{{ icon('trash') }}</button></td></tr>
+        {% else %}
+        <tr><td class="empty-state" colspan="3">No allowlisted domains.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function toggleCat(cat, checkbox){
+  Nova.api(`/filtering/category/${cat}/toggle`, {method:"POST"}).then(d=>{
+    const msg = d.enabled ? (d.seeded ? `Enabled — ${d.seeded} real domain(s) loaded` : 'Enabled') : 'Disabled';
+    Nova.toast(msg);
+    setTimeout(()=>location.reload(), d.seeded ? 700 : 0);
+  }).catch(()=>{ checkbox.checked = !checkbox.checked; });
+}
+function viewDomains(cat, label){
+  document.getElementById('vd-title').textContent = label;
+  document.getElementById('vd-body').innerHTML = '<div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  Nova.openModal('view-domains-modal');
+  fetch(`/filtering/category/${cat}/domains`).then(r=>r.json()).then(d=>{
+    document.getElementById('vd-body').innerHTML = d.domains.length
+      ? `<div class="help" style="margin-bottom:10px;">${d.count} domain(s)${d.last_updated ? ' · updated '+d.last_updated : ''}</div>` +
+        d.domains.map(x => `<div class="mono" style="padding:3px 0; font-size:12.5px;">${x}</div>`).join('')
+      : '<div class="empty-state">No domains loaded yet — try "Sync now" if this is a live feed.</div>';
+  });
+}
+function addBlocklist(){
+  const body = { name: document.getElementById('bl-name').value, source_url: document.getElementById('bl-url').value };
+  Nova.api("{{ url_for('filtering.add_blocklist') }}", {method:"POST", body}).then(()=>location.reload());
+}
+function uploadBlocklist(){
+  const f = document.getElementById('up-file').files[0];
+  if(!f) return Nova.toast("Choose a file first", "error");
+  const fd = new FormData();
+  fd.append('name', document.getElementById('up-name').value);
+  fd.append('category', document.getElementById('up-category').value);
+  fd.append('file', f);
+  fetch("{{ url_for('filtering.upload_blocklist') }}", {method:"POST", body:fd}).then(r=>r.json()).then(d=>{
+    if(d.error) return Nova.toast(d.error, "error");
+    Nova.toast(`Imported ${d.count} domain(s)`); location.reload();
+  });
+}
+function syncBlocklist(id){
+  Nova.toast("Syncing…");
+  Nova.api(`/filtering/blocklists/${id}/sync`, {method:"POST"}).then(d=>{
+    Nova.toast(d.ok ? `Synced ${d.count} entries` : d.error, d.ok ? "success" : "error");
+    setTimeout(()=>location.reload(), 900);
+  });
+}
+function delBlocklist(id){ if(Nova.confirmDanger("Delete this blocklist and its entries?")) Nova.api(`/filtering/blocklists/${id}/delete`, {method:"POST"}).then(()=>location.reload()); }
+function addCustom(listType){
+  const domain = prompt(`Domain to ${listType} (e.g. *.example.com or a regex):`);
+  if(!domain) return;
+  Nova.api("{{ url_for('filtering.add_custom') }}", {method:"POST", body:{domain, list_type:listType}}).then(()=>location.reload());
+}
+function delCustom(id){ Nova.api(`/filtering/custom/${id}`, {method:"DELETE"}).then(()=>location.reload()); }
+</script>
+{% endblock %}

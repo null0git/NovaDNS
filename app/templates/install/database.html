@@ -1,0 +1,21 @@
+{% extends "install/_wizard_base.html" %}
+{% block wizard_body %}
+<div class="eyebrow">Step 8 of {{ steps|length }}</div>
+<h2 style="margin:8px 0 6px;">Database</h2>
+<p style="color:var(--text-muted); margin:0 0 20px;">NovaDNS stores everything in an embedded SQLite database — zero setup, single-file backups, no separate service to run.</p>
+<form method="post" action="{{ url_for('install.save_step', step='database') }}">
+  <div class="card" style="padding:16px; display:flex; align-items:center; gap:14px; border-color:var(--accent);">
+    <div class="icon-chip" style="position:static; background:var(--accent-soft); color:var(--accent); width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;">{{ icon('database') }}</div>
+    <div>
+      <div style="font-weight:600;">SQLite (embedded)</div>
+      <div class="help" style="margin-top:2px;">Selected — no configuration needed.</div>
+    </div>
+    <span class="badge badge-green" style="margin-left:auto;">{{ icon('check') }} Selected</span>
+  </div>
+  <div class="help" style="margin-top:14px;">External engines (PostgreSQL/MySQL) can be added later via the plugin system as your deployment grows.</div>
+  <div style="display:flex; justify-content:space-between; margin-top:20px;">
+    <a class="btn btn-outline" href="{{ url_for('install.wizard', step='family') }}">Back</a>
+    <button class="btn btn-primary" type="submit">Continue</button>
+  </div>
+</form>
+{% endblock %}
